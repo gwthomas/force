@@ -1,0 +1,3 @@
+LOG_DIR = ''
+DEFAULT_EPSILON = 1e-8
+FLOAT_T = 'float32'
