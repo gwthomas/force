@@ -1,4 +1,4 @@
-from network import Network
+from .network import Network
 
 class Container(Network):
     def __init__(self, implementation):

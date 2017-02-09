@@ -26,10 +26,14 @@ class Optimizer(object):
                 allow_input_downcast=True
         )
 
-    def run(self, X, Y, itrs=100, batchsize=100, filename='params.npz'):
+    def run(self, X, Y, itrs=100, batchsize=100, filename='params.npz', verbose=False):
         n = len(X)
+        if batchsize is None:
+            batchsize = n
+
         for itr in range(itrs):
             batchidx = np.random.permutation(n)[:batchsize]
             loss = self._update(X[batchidx], Y[batchidx])
-            print('Itr %i: loss = %f' % (itr, loss))
-            self._network.save_params(filename)
+            if verbose:
+                print('Itr %i: loss = %f' % (itr, loss))
+        self._network.save_params(filename)

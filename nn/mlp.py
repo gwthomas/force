@@ -1,4 +1,3 @@
-from theano_stuff import TheanoFunction
 import theano.tensor as T
 import lasagne
 import lasagne.layers as L
