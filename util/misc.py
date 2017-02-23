@@ -32,19 +32,9 @@ def sanity_check_params(params):
     for param in params:
         assert not np.any(np.isnan(param))
 
-# Intended to manufacture callbacks
-def param_logger(parametric, filename='params.npz', frequency=1):
-    def save(engine, _=None):
-        if engine.itr % frequency == 0:
-            parametric.save_params(logpath(filename))
-    return save
-
-def load_params(parametric, filename='params.npz'):
-    path = logpath(filename)
-    try:
-        parametric.load_params(path)
-    except:
-        raise RuntimeError('Failed to load network weights from path {}'.format(path))
+# Flatten and concatenate
+def conflattenate(arrays):
+    return np.concatenate([array.flatten() for array in arrays])
 
 def keywise(dicts, keys):
     return [np.array([d[key] for d in dicts]) for key in keys]
@@ -69,3 +59,7 @@ def show_matrix(m, cmap=None):
 
 def pickle_copy(o):
     return pickle.loads(pickle.dumps(o))
+
+def clip_by_global_norm(arrays, clip_norm):
+    global_norm = np.sqrt(np.sum([np.sum(array**2) for array in arrays]))
+    return [array * clip_norm / max(global_norm, clip_norm) for array in arrays]

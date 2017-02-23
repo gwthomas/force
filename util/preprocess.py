@@ -23,8 +23,8 @@ def resizer(*size):
 
 # Implements preprocessing method described in the paper by Mnih, et al.
 def atari_preprocessor(m=4, size=(84,84)):
-    def preprocess(raw_observation, engine):
-        raw_observations = engine.latest_episode().raw_observations
+    def preprocess(raw_observation, env):
+        raw_observations = env.observation_history.recent(m)
 
         # Make sure there are enough frames (duplicate latest if not)
         latest = raw_observation
