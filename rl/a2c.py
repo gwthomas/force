@@ -1,4 +1,3 @@
-from multiprocessing import Process, Queue, cpu_count
 import lasagne
 import numpy as np
 import theano
@@ -8,7 +7,6 @@ from gtml.nn.network import Collection, Container
 from gtml.nn.opt import Optimizer, squared_error
 from gtml.rl.core import Episode, partial_rollout, rollouts, discounted_returns
 from gtml.rl.env import vector_var_for_space
-from gtml.util.misc import conflattenate, clip_by_global_norm
 
 
 class ActorCritic(Collection):
