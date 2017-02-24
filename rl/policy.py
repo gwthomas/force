@@ -1,5 +1,5 @@
 import numpy as np
-import theano.tensor as T
+import tensorflow as tf
 
 from gtml.nn.network import Container
 from gtml.util.misc import add_dim

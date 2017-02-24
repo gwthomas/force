@@ -1,93 +1,50 @@
 import gym
-import theano.tensor as T
-import lasagne
-import lasagne.layers as L
-import lasagne.nonlinearities as NL
+import tensorflow as tf
 
-from gtml.rl.env import integral_dimensionality
-
-def mlp_proto(sizes, input=None, nl=NL.rectify, output_nl=None):
-    if isinstance(input, lasagne.layers.Layer):
-        l_prev = input
-        input_var = None
-    else:
-        if input is None:
-            input = T.fmatrix()
-
-        input_var = input
-        l_prev = L.InputLayer(
-            shape=(None, sizes[0]),
-            input_var=input_var
-        )
-
-    for size in sizes[1:-1]:
-        l_prev = L.DenseLayer(l_prev,
-            num_units=size,
-            nonlinearity=nl
-        )
-
-    l_output = L.DenseLayer(l_prev,
-        num_units=sizes[-1],
-        nonlinearity=output_nl
-    )
-
-    return l_output, input_var
+from gtml.nn.layers import *
+import gtml.config as cfg
 
 
-def mlp_proto_for_env(env, hidden_sizes, input_var=None, nl=NL.rectify):
+def mlp_proto(sizes, input=None, nl=tf.nn.relu, output_nl=None):
+    if input is None:
+        input = tf.placeholder(cfg.FLOAT_T, shape=[None, sizes[0]])
+
+    sofar = input
+    for size in sizes:
+        sofar = DenseLayer(sofar, size, nl)
+    sofar = DenseLayer(sofar, sizes[-1], output_nl)
+
+    return sofar
+
+def mlp_proto_for_env(env, hidden_sizes, nl=tf.nn.relu):
     n_input = integral_dimensionality(env.observation_space)
     n_output = integral_dimensionality(env.action_space)
-    output_nl = NL.softmax if isinstance(env.action_space, gym.spaces.Discrete) else None
-    return mlp_proto([n_input] + hidden_sizes + [n_output], input_var, nl, output_nl)
+    output_nl = tf.nn.softmax if isinstance(env.action_space, gym.spaces.Discrete) else None
+    return mlp_proto([n_input] + hidden_sizes + [n_output], nl=nl, output_nl=output_nl)
 
 
 def convnet_proto(input_shape, num_out, filters, strides,
         poolings=None,
         input=None,
-        conv_nl=NL.rectify,
-        hidden_sizes=[100],
-        hidden_nl=NL.rectify,
+        conv_nl=tf.nn.relu,
+        hidden_sizes=[],
+        hidden_nl=tf.nn.relu,
         output_nl=None
 ):
     assert len(input_shape) == 3
+    if input is None:
+        input = tf.placeholder(cfg.FLOAT_T, shape=[None]+list(input_shape))
 
-    if isinstance(input, lasagne.layers.Layer):
-        l_prev = input
-        input_var = None
-    else:
-        if input is None:
-            input = T.ftensor4()
-
-        input_var = input
-        l_prev = L.InputLayer(
-            shape=(None,) + input_shape,
-            input_var=input
-        )
-
-    if poolings is None:
-        poolings = [None] * len(filters)
-
+    sofar = input
     for filter, stride, pooling in zip(filters, strides, poolings):
         n_filters, filter_size = filter
-        l_prev = L.Conv2DLayer(l_prev, n_filters, filter_size,
+        sofar = ConvLayer(sofar, n_filters, filter_size,
                 stride=stride,
                 nonlinearity=conv_nl)
         if pooling is not None:
-            l_prev = L.MaxPool2DLayer(l_prev, pooling)
+            sofar = MaxPoolLayer(sofar, pooling)
 
-    for size in hidden_sizes:
-        l_prev = L.DenseLayer(l_prev,
-            num_units=size,
-            nonlinearity=hidden_nl
-        )
-
-    l_output = L.DenseLayer(l_prev,
-        num_units=num_out,
-        nonlinearity=output_nl
-    )
-
-    return l_output, input_var
-
+    return mlp_proto(sizes=hidden_sizes+[num_out], input=sofar, nl=hidden_nl, output_nl=output_nl)
 
 def dqn_atari_proto(env, output_nl=None, m=4):
     return convnet_proto((m, 84, 84), env.action_space.n,
@@ -95,8 +52,3 @@ def dqn_atari_proto(env, output_nl=None, m=4):
             strides=[4, 2, 1],
             hidden_sizes=[512],
             output_nl=output_nl)
-
-
-def shared_value_function_proto(proto):
-    layers = L.get_all_layers(proto)
-    return L.DenseLayer(layers[-2], 1, nonlinearity=None)

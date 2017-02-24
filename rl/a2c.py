@@ -1,7 +1,5 @@
-import lasagne
 import numpy as np
-import theano
-import theano.tensor as T
+import tensorflow as tf
 
 from gtml.nn.network import Collection, Container
 from gtml.nn.opt import Optimizer, squared_error

@@ -1,5 +1,5 @@
 import numpy as np
-import theano.tensor as T
+import tensorflow as tf
 
 from gtml.nn.network import Container
 from gtml.nn.opt import SupervisedLearning, mean_squared_error
@@ -28,14 +28,14 @@ class ParametricValueFunction(ValueFunction, Container):
     def __init__(self, env, implementation):
         super().__init__(env)
         Container.__init__(self, implementation)
-        self.opt = SupervisedLearning(implementation, mean_squared_error, target_var=T.fcol())
 
     def fit(self, episodes, itrs):
         X, Y = [], []
         for episode in episodes:
             X.extend(episode.observations)
             Y.extend(discounted_returns(episode.rewards, self.env.discount))
-        self.opt.run(np.array(X), np.column_stack([Y]), itrs=itrs, batchsize=100)
+        raise NotImplementedError
+        # self.opt.run(np.array(X), np.column_stack([Y]), itrs=itrs, batchsize=100)
 
     def __call__(self, observations):
         return self.implementation(observations).flatten()

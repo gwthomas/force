@@ -1,37 +1,31 @@
 import gym
 import numpy as np
-import theano.tensor as T
+import tensorflow as tf
 
 import gtml.config as cfg
 from gtml.util.memory import Memory
 from gtml.util.misc import attrwise_cat
 
-# Determines how many dimensions an observation or action space has
-# If it's a discrete space, this is the number of elements
-# If it's a box space, this is the shape of the box
-def dimensionality(space):
+
+def integral_dimensionality(space):
     if isinstance(space, gym.spaces.Discrete):
         return space.n
     elif isinstance(space, gym.spaces.Box):
-        return space.shape
+        return int(np.prod(space.shape))
 
-def integral_dimensionality(space):
-    return int(np.prod(dimensionality(space)))
-
-def var_for_space(space):
+def placeholder_for_space(space, extra_dim=False):
     if isinstance(space, gym.spaces.Discrete):
-        return T.iscalar()
+        type = cfg.INT_T
+        shape = [space.n]
     elif isinstance(space, gym.spaces.Box):
-        dim = len(dimensionality(space))
-        return T.TensorType(cfg.FLOAT_T, (False,)*dim)()
+        type = cfg.FLOAT_T
+        shape = list(space.shape)
+    else:
+        raise RuntimeError
 
-def vector_var_for_space(space):
-    if isinstance(space, gym.spaces.Discrete):
-        return T.ivector()
-    elif isinstance(space, gym.spaces.Box):
-        dim = len(dimensionality(space))
-        return T.TensorType(cfg.FLOAT_T, (False,)*(dim+1))()
-
+    if extra_dim:
+        shape = [None] + shape
+    return tf.placeholder(type, shape)
 
 class Environment:
     def __init__(self, name, discount=0.99, preprocess=None, history=10):

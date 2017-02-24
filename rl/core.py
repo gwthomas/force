@@ -1,5 +1,3 @@
-from multiprocessing.pool import Pool
-
 from gtml.util.memory import Memory
 import numpy as np
 
