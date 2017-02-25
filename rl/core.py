@@ -1,5 +1,3 @@
-from multiprocessing.pool import Pool
-
 from gtml.util.memory import Memory
 import numpy as np
 
@@ -83,12 +81,9 @@ def rollout(policy, horizon=None, render=False):
     partial_rollout(policy, episode, horizon, render=render)
     return episode
 
-def rollouts(policy, num_episodes, horizon=None, render=False, num_processes=1):
-    if num_processes == 1:
-        return [rollout(policy, horizon=horizon, render=render) for _ in range(num_episodes)]
-    else:
-        pool = Pool(num_processes)
+def rollouts(policy, num_episodes, horizon=None, render=False):
+    return [rollout(policy, horizon=horizon, render=render) for _ in range(num_episodes)]
 
-def evaluate(policy, num_episodes=1, horizon=None, render=False, num_processes=1):
-    episodes = rollouts(policy, num_episodes, horizon=horizon, render=render, num_processes=num_processes)
+def evaluate(policy, num_episodes=1, horizon=None, render=False):
+    episodes = rollouts(policy, num_episodes, horizon=horizon, render=render)
     return np.array([episode.discounted_return for episode in episodes])

@@ -26,8 +26,7 @@ def load_cifar(dir):
 
 def load_mnist(dir):
     def reshape_images(imgs):
-        shape = (28,28)
-        return imgs.reshape((len(imgs), 1,)+shape) / 255.0
+        return imgs.reshape((len(imgs), 28, 28, 1)) / 255.0
 
     from mnist import MNIST
     mndata = MNIST(dir)

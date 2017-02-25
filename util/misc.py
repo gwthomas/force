@@ -2,7 +2,6 @@ import pickle
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-import theano.tensor as T
 import gtml.config as cfg
 from .file import logpath
 
@@ -20,9 +19,6 @@ def safelog(x, epsilon=cfg.DEFAULT_EPSILON):
 def one_hot(labels, num_classes):
     return np.eye(num_classes)[labels]
 
-def safelog_sym(x, epsilon=cfg.DEFAULT_EPSILON):
-    return T.log(x + epsilon)
-
 def add_dim(array, axis=0):
     shape = list(array.shape)
     shape.insert(axis, 1)
@@ -32,7 +28,7 @@ def sanity_check_params(params):
     for param in params:
         assert not np.any(np.isnan(param))
 
-# Flatten and concatenate
+# Flatten, then concatenate
 def conflattenate(arrays):
     return np.concatenate([array.flatten() for array in arrays])
 
@@ -59,7 +55,3 @@ def show_matrix(m, cmap=None):
 
 def pickle_copy(o):
     return pickle.loads(pickle.dumps(o))
-
-def clip_by_global_norm(arrays, clip_norm):
-    global_norm = np.sqrt(np.sum([np.sum(array**2) for array in arrays]))
-    return [array * clip_norm / max(global_norm, clip_norm) for array in arrays]

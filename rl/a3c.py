@@ -1,11 +1,9 @@
 from threading import Thread
 from queue import Queue
 import multiprocessing as mp
-import lasagne
 import numpy as np
 import os
-import theano
-import theano.tensor as T
+import tensorflow as tf
 import time
 
 from gtml.nn.network import Collection, Container

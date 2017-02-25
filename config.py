@@ -1,3 +1,6 @@
+import tensorflow as tf
+
 LOG_DIR = ''
 DEFAULT_EPSILON = 1e-8
-FLOAT_T = 'float32'
+INT_T = tf.int32
+FLOAT_T = tf.float32

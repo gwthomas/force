@@ -1,102 +1,59 @@
 import gym
-import theano.tensor as T
-import lasagne
-import lasagne.layers as L
-import lasagne.nonlinearities as NL
+import tensorflow as tf
 
+import gtml.config as cfg
+from gtml.nn.layers import *
 from gtml.rl.env import integral_dimensionality
 
-def mlp_proto(sizes, input=None, nl=NL.rectify, output_nl=None):
-    if isinstance(input, lasagne.layers.Layer):
-        l_prev = input
-        input_var = None
-    else:
-        if input is None:
-            input = T.fmatrix()
+def mlp(sizes, input=None, nl=tf.nn.relu, output_nl=None):
+    if input is None:
+        input = tf.placeholder(cfg.FLOAT_T, shape=[None, sizes[0]], name="mlp_in")
 
-        input_var = input
-        l_prev = L.InputLayer(
-            shape=(None, sizes[0]),
-            input_var=input_var
-        )
+    sofar = input
+    for size in sizes[:-1]:
+        sofar = DenseLayer(sofar, size, nl)
+    sofar = DenseLayer(sofar, sizes[-1], output_nl)
 
-    for size in sizes[1:-1]:
-        l_prev = L.DenseLayer(l_prev,
-            num_units=size,
-            nonlinearity=nl
-        )
+    return sofar
 
-    l_output = L.DenseLayer(l_prev,
-        num_units=sizes[-1],
-        nonlinearity=output_nl
-    )
-
-    return l_output, input_var
-
-
-def mlp_proto_for_env(env, hidden_sizes, input_var=None, nl=NL.rectify):
+def mlp_for_env(env, hidden_sizes, nl=tf.nn.relu):
     n_input = integral_dimensionality(env.observation_space)
     n_output = integral_dimensionality(env.action_space)
-    output_nl = NL.softmax if isinstance(env.action_space, gym.spaces.Discrete) else None
-    return mlp_proto([n_input] + hidden_sizes + [n_output], input_var, nl, output_nl)
+    output_nl = tf.nn.softmax if isinstance(env.action_space, gym.spaces.Discrete) else None
+    return mlp([n_input] + hidden_sizes + [n_output], nl=nl, output_nl=output_nl)
 
 
-def convnet_proto(input_shape, num_out, filters, strides,
+def convnet(input_shape, filters, strides, dense_sizes,
         poolings=None,
         input=None,
-        conv_nl=NL.rectify,
-        hidden_sizes=[100],
-        hidden_nl=NL.rectify,
+        conv_nl=tf.nn.relu,
+        dense_nl=tf.nn.relu,
         output_nl=None
 ):
     assert len(input_shape) == 3
+    if input is None:
+        input = tf.placeholder(cfg.FLOAT_T, shape=[None]+list(input_shape), name="conv_in")
 
-    if isinstance(input, lasagne.layers.Layer):
-        l_prev = input
-        input_var = None
-    else:
-        if input is None:
-            input = T.ftensor4()
+    poolings = [None]*len(filters) if poolings is None else poolings
 
-        input_var = input
-        l_prev = L.InputLayer(
-            shape=(None,) + input_shape,
-            input_var=input
-        )
-
-    if poolings is None:
-        poolings = [None] * len(filters)
-
+    sofar = input
     for filter, stride, pooling in zip(filters, strides, poolings):
         n_filters, filter_size = filter
-        l_prev = L.Conv2DLayer(l_prev, n_filters, filter_size,
+        sofar = ConvLayer(sofar, n_filters, filter_size,
                 stride=stride,
                 nonlinearity=conv_nl)
         if pooling is not None:
-            l_prev = L.MaxPool2DLayer(l_prev, pooling)
+            sofar = MaxPoolLayer(sofar, pooling)
 
-    for size in hidden_sizes:
-        l_prev = L.DenseLayer(l_prev,
-            num_units=size,
-            nonlinearity=hidden_nl
-        )
+    return mlp(sizes=dense_sizes, input=sofar, nl=dense_nl, output_nl=output_nl)
 
-    l_output = L.DenseLayer(l_prev,
-        num_units=num_out,
-        nonlinearity=output_nl
-    )
-
-    return l_output, input_var
-
-
-def dqn_atari_proto(env, output_nl=None, m=4):
-    return convnet_proto((m, 84, 84), env.action_space.n,
+def dqn_atari(env, output_nl=None, m=4):
+    return convnet((m, 84, 84),
             filters=[(32, 8), (64, 4), (64, 3)],
             strides=[4, 2, 1],
-            hidden_sizes=[512],
+            dense_sizes=[512, env.action_space.n],
             output_nl=output_nl)
 
 
-def shared_value_function_proto(proto):
-    layers = L.get_all_layers(proto)
-    return L.DenseLayer(layers[-2], 1, nonlinearity=None)
+def shared_value_function(layer):
+    return DenseLayer(layer.get_input(), 1, None)
