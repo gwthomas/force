@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
+from gtml.util.tf import flatten
 
 def _get_tf(o):
     if isinstance(o, tf.Tensor):
@@ -45,16 +46,24 @@ class Layer:
         else:
             return self._input.get_all_params() + self._params
 
+    def eval(self, feed_dict, sess=None):
+        if sess is None:
+            sess = tf.get_default_session()
+        return sess.run(self._output, feed_dict=feed_dict)
+
+    def __call__(self, input):
+        return self.eval({self.get_orig_input(): input})
+
 
 class DenseLayer(Layer):
     def __init__(self, input, size, nonlinearity, num_leading_axes=1):
         input_tf = _get_tf(input)
-        input_shape = _get_shape(input_tf)
-        input_size = np.prod(input_shape[num_leading_axes:])
+        flattened_input = flatten(input_tf, num_leading_axes=num_leading_axes)
+        input_size = flattened_input.get_shape().as_list()[1]
         self._W = tf.Variable(tf.random_normal([input_size, size], stddev=0.1))
         self._b = tf.Variable(tf.zeros(size))
-        flattened_input = tf.reshape(input_tf, [-1]*num_leading_axes+[input_size])
-        output = nonlinearity(tf.matmul(flattened_input, self._W) + self._b)
+        pre_activation = tf.matmul(flattened_input, self._W) + self._b
+        output = nonlinearity(pre_activation) if nonlinearity is not None else pre_activation
         super().__init__(input, output, [self._W, self._b])
 
 
@@ -67,8 +76,9 @@ class ConvLayer(Layer):
         self._W = tf.Variable(tf.random_normal([filter_size, filter_size, in_channels, out_channels], stddev=0.1))
         self._b = tf.Variable(tf.zeros(out_channels))
         self._params = [self._W, self._b]
-        output = nonlinearity(tf.nn.conv2d(input_tf, self._W,
-                strides=[1, stride, stride, 1], padding=padding) + self._b)
+        pre_activation = tf.nn.conv2d(input_tf, self._W,
+                strides=[1, stride, stride, 1], padding=padding) + self._b
+        output = nonlinearity(pre_activation) if nonlinearity is not None else pre_activation
         super().__init__(input, output, [self._W, self._b])
 
 

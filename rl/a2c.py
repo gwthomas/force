@@ -1,42 +1,44 @@
 import numpy as np
 import tensorflow as tf
 
-from gtml.nn.network import Collection, Container
-from gtml.nn.opt import Optimizer, squared_error
+import gtml.config as cfg
+from gtml.nn.network import Network
 from gtml.rl.core import Episode, partial_rollout, rollouts, discounted_returns
-from gtml.rl.env import vector_var_for_space
+from gtml.rl.env import placeholder_for_space
+from gtml.util.tf import flatten, squared_error
 
-
-class ActorCritic(Collection):
+class ActorCritic(Network):
     def __init__(self, actor, critic, name):
         self.actor = actor
         self.critic = critic
-        super().__init__([actor, critic], name)
+        super().__init__([actor.implementation, critic.implementation], name)
 
 
-class A2C(Optimizer):
-    def __init__(self, setup_fn, load=False, update_fn=lasagne.updates.adam, reg_value_fit=0.25, reg_entropy=0.01):
+class A2C:
+    def __init__(self, setup_fn, optimizer=tf.train.AdamOptimizer(), reg_value_fit=0.25, reg_entropy=0.01):
         ac = setup_fn()
-        if load:
-            ac.load_params()
         policy, value_fn = ac.actor, ac.critic
         env = policy.env
 
-        observations_var = policy.get_input_var()
-        actions_var = vector_var_for_space(env.action_space)
-        log_probs_var = policy.get_log_probs_var(actions_var)
-        returns_var = T.fvector()
-        advantages_var = T.fvector()
-        policy_loss_var = -T.sum(log_probs_var * advantages_var)
-        if reg_entropy != 0:
-            policy_loss_var = policy_loss_var - reg_entropy * policy.get_entropy_var()
-        value_fn_loss_var = squared_error(value_fn.get_output_var().flatten(), returns_var)
-        loss_var = policy_loss_var + reg_value_fit * value_fn_loss_var
-        input_vars = [observations_var, actions_var, returns_var, advantages_var]
-        updates = update_fn(loss_var, ac.get_param_vars())
+        observations_tf = policy.get_orig_input()
+        actions_tf = placeholder_for_space(env.action_space, 1, name='actions')
+        n_tf = tf.placeholder(cfg.INT_T, shape=[], name='n')
+        log_probs_tf = policy.get_log_probs_var(actions_tf, n_tf)
 
-        super().__init__(input_vars, updates)
+        returns_tf = tf.placeholder(cfg.FLOAT_T, shape=[None], name='returns')
+        advantages_tf = tf.placeholder(cfg.FLOAT_T, shape=[None], name='advantages')
+        policy_loss_tf = -tf.reduce_sum(log_probs_tf * advantages_tf)
+        if reg_entropy != 0:
+            policy_loss_tf = policy_loss_tf - reg_entropy * policy.get_entropy()
+        value_fn_loss_tf = squared_error(flatten(value_fn.get_output()), returns_tf)
+        loss_tf = policy_loss_tf + reg_value_fit * value_fn_loss_tf
+        self.train = optimizer.minimize(loss_tf)
         self.ac = ac
+        self.observations_tf = observations_tf
+        self.actions_tf = actions_tf
+        self.returns_tf = returns_tf
+        self.advantages_tf = advantages_tf
+        self.n_tf = n_tf
 
     def run(self, Tmax, tmax=20, render=False):
         policy, value_fn = self.ac.actor, self.ac.critic
@@ -46,12 +48,13 @@ class A2C(Optimizer):
         while T < Tmax:
             # Act for a bit
             steps = partial_rollout(policy, episode, tmax, render=render)
+            value_predictions = value_fn(episode.observations)
             T += steps
             if episode.done:
                 R = 0
                 observations = episode.observations[-steps:]
             else:
-                R = value_fn([episode.latest_observation()])[0]
+                R = value_predictions[-1]
                 observations = episode.observations[-(steps+1):-1]
             actions = episode.actions[-steps:]
             rewards = episode.rewards[-steps:]
@@ -60,9 +63,14 @@ class A2C(Optimizer):
                 R = rewards[i] + env.discount * R
                 returns[i] = R
 
-            advantages = returns - value_fn(observations)
-            self.step(observations, actions, returns, advantages)
-            self.ac.save_params()
+            advantages = returns - value_predictions[:steps]
+            self.train.run(feed_dict={
+                    self.observations_tf: observations,
+                    self.actions_tf: actions,
+                    self.returns_tf: returns,
+                    self.advantages_tf: advantages,
+                    self.n_tf: len(actions)
+            })
 
             if episode.done:
                 print(episode.discounted_return)

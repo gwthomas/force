@@ -13,19 +13,18 @@ def integral_dimensionality(space):
     elif isinstance(space, gym.spaces.Box):
         return int(np.prod(space.shape))
 
-def placeholder_for_space(space, extra_dim=False):
+def placeholder_for_space(space, extra_dims, name=None):
     if isinstance(space, gym.spaces.Discrete):
         type = cfg.INT_T
-        shape = [space.n]
+        shape = []
     elif isinstance(space, gym.spaces.Box):
         type = cfg.FLOAT_T
         shape = list(space.shape)
     else:
         raise RuntimeError
 
-    if extra_dim:
-        shape = [None] + shape
-    return tf.placeholder(type, shape)
+    shape = [None]*extra_dims + shape
+    return tf.placeholder(type, shape, name=name)
 
 class Environment:
     def __init__(self, name, discount=0.99, preprocess=None, history=10):

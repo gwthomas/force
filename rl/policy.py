@@ -3,7 +3,7 @@ import tensorflow as tf
 
 from gtml.nn.network import Container
 from gtml.util.misc import add_dim
-
+from gtml.util.tf import selection_slice
 
 class Policy(object):
     def __init__(self, env):
@@ -17,6 +17,7 @@ class ParametricPolicy(Policy, Container):
     def __init__(self, env, implementation):
         super().__init__(env)
         Container.__init__(self, implementation)
+        self.observations_tf = implementation.get_orig_input()
 
     def get_action(self, observation):
         return self.get_actions(add_dim(observation))[0]
@@ -47,13 +48,13 @@ class MultinomialPolicy(ParametricPolicy):
         output = self.implementation(observations)
         return np.array([np.random.choice(len(row), p=row) for row in output])
 
-    def get_log_probs_var(self, actions_var):
-        all_log_probs = T.log(self.implementation.get_output_var())
-        return all_log_probs[T.arange(actions_var.shape[0]),actions_var]
+    def get_log_probs_var(self, actions_tf, n_tf):
+        all_log_probs = tf.log(self.implementation.get_output())
+        return selection_slice(all_log_probs, actions_tf, n_tf)
 
-    def get_entropy_var(self):
-        output = self.get_output_var()
-        return -T.sum(output * T.log(output))
+    def get_entropy(self):
+        output = self.get_output()
+        return -tf.reduce_sum(output * tf.log(output))
 
 
 # Sort of a meta-policy. Takes another policy as input
