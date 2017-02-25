@@ -5,7 +5,8 @@ from gtml.nn.network import Container
 from gtml.util.misc import add_dim
 from gtml.util.tf import selection_slice
 
-class Policy(object):
+
+class Policy:
     def __init__(self, env):
         self.env = env
 
