@@ -1,11 +1,11 @@
 import numpy as np
 import tensorflow as tf
 
+def get_sess(sess=None):
+    return tf.get_default_session() if sess is None else sess
 
 def init_sess(sess=None):
-    if sess is None:
-        sess = tf.get_default_session()
-    sess.run(tf.global_variables_initializer())
+    return get_sess(sess).run(tf.global_variables_initializer())
 
 def flatten(tensor, num_leading_axes=1):
     shape = tensor.get_shape().as_list()

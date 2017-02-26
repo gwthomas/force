@@ -1,74 +1,41 @@
 import numpy as np
 import tensorflow as tf
 
-from gtml.nn.network import Container
-from gtml.util.misc import add_dim
-from gtml.util.tf import selection_slice
+from gtml.nn.network import Network
 
-
-class Policy:
-    def __init__(self, env):
+class Policy(Network):
+    def __init__(self, env, policy):
         self.env = env
-
-    def get_action(self, observation):
-        raise NotImplementedError
-
-
-class ParametricPolicy(Policy, Container):
-    def __init__(self, env, implementation):
-        super().__init__(env)
-        Container.__init__(self, implementation)
-        self.observations_tf = implementation.get_orig_input()
-
-    def get_action(self, observation):
-        return self.get_actions(add_dim(observation))[0]
-
-    def get_actions(self, observation):
-        raise NotImplementedError
-
-
-class DirectPolicy(ParametricPolicy):
-    stochastic = False
-
-    def get_actions(self, observations):
-        return self.implementation(observations)
-
-
-class ArgmaxPolicy(ParametricPolicy):
-    stochastic = False
-
-    def get_actions(self, observations):
-        output = self.implementation(observations)
-        return np.argmax(output)
-
-
-class MultinomialPolicy(ParametricPolicy):
-    stochastic = True
-
-    def get_actions(self, observations):
-        output = self.implementation(observations)
-        return np.array([np.random.choice(len(row), p=row) for row in output])
-
-    def get_log_probs_var(self, actions_tf, n_tf):
-        all_log_probs = tf.log(self.implementation.get_output())
-        return selection_slice(all_log_probs, actions_tf, n_tf)
-
-    def get_entropy(self):
-        output = self.get_output()
-        return -tf.reduce_sum(output * tf.log(output))
-
-
-# Sort of a meta-policy. Takes another policy as input
-class EpsilonGreedyPolicy(Policy):
-    stochastic = True
-
-    def __init__(self, policy, epsilon):
-        super(EpsilonGreedyPolicy, self).__init__(policy.env)
         self.policy = policy
-        self.epsilon = epsilon
+        self.observations_in = policy.get_orig_input()
+        self.names = [policy.name]
+        super().__init__([policy])
 
-    def get_action(self, observation):
-        if np.random.random() < self.epsilon:
-            return self.env.action_space.sample()
-        else:
-            return self.policy.get_action(observation)
+    def act(self, observations, sess=None):
+        results = self.eval(self.names, {self.observations_in: observations}, sess=sess)
+        assert '_actions' not in results # reserved
+        results['_actions'] = results[self.policy.name]
+        return results
+
+
+# Special policy that also spits out value function estimates
+class ActorCritic(Policy):
+    def __init__(self, env, actor, critic):
+        self.actor = actor
+        self.critic = critic
+        super().__init__(env, actor)
+        self.names.append(critic.name)
+        # Network init already got called but it needs both outputs
+        Network.__init__(self, [actor, critic])
+
+    def act(self, observations, sess=None):
+        results = self.eval(self.names, {self.observations_in: observations}, sess=sess)
+        assert '_actions' not in results # reserved
+        assert '_values' not in results  # reserved
+        results['_actions'] = results[self.actor.name].flatten()
+        results['_values'] = results[self.critic.name].flatten()
+        return results
+
+    def critique(self, observations, sess=None):
+        results = self.eval([self.critic.name], {self.observations_in: observations}, sess=sess)
+        return results[self.critic.name].flatten()

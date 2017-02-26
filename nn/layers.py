@@ -1,7 +1,8 @@
 import numpy as np
 import tensorflow as tf
 
-from gtml.util.tf import flatten
+from gtml.util.tf import flatten, selection_slice
+
 
 def _get_tf(o):
     if isinstance(o, tf.Tensor):
@@ -21,6 +22,7 @@ class Layer:
         self._input = input
         self._output = output
         self._params = params
+        self.name = None
 
     def get_input(self):
         return self._input
@@ -60,7 +62,7 @@ class DenseLayer(Layer):
         input_tf = _get_tf(input)
         flattened_input = flatten(input_tf, num_leading_axes=num_leading_axes)
         input_size = flattened_input.get_shape().as_list()[1]
-        self._W = tf.Variable(tf.random_normal([input_size, size], stddev=0.1))
+        self._W = tf.Variable(tf.random_normal([input_size, size], stddev=0.01))
         self._b = tf.Variable(tf.zeros(size))
         pre_activation = tf.matmul(flattened_input, self._W) + self._b
         output = nonlinearity(pre_activation) if nonlinearity is not None else pre_activation
@@ -73,7 +75,7 @@ class ConvLayer(Layer):
         input_shape = _get_shape(input_tf)
         in_channels = input_shape[-1]
         out_channels = num_filters
-        self._W = tf.Variable(tf.random_normal([filter_size, filter_size, in_channels, out_channels], stddev=0.1))
+        self._W = tf.Variable(tf.random_normal([filter_size, filter_size, in_channels, out_channels], stddev=0.01))
         self._b = tf.Variable(tf.zeros(out_channels))
         self._params = [self._W, self._b]
         pre_activation = tf.nn.conv2d(input_tf, self._W,
@@ -90,3 +92,28 @@ class MaxPoolLayer(Layer):
         output = tf.nn.max_pool(input_tf, ksize=[1, size, size, 1],
                         strides=[1, stride, stride, 1], padding=padding)
         super().__init__(input, output, [])
+
+
+# For implementing deterministic policies on discrete action spaces
+def ArgmaxLayer(Layer):
+    def __init__(self, input, axis=1):
+        input_tf = _get_tf(input)
+        output = tf.argmax(input_tf, axis=axis)
+        super().__init__(input, output, [])
+
+
+# For implementing stochastic policies on discrete action spaces
+# Note: assumes that input gives *log* probabilities
+class MultinomialLayer(Layer):
+    def __init__(self, input, axis=1):
+        input_tf = _get_tf(input)
+        output = flatten(tf.multinomial(input_tf, 1))
+        super().__init__(input, output, [])
+
+    def get_log_probs(self, actions_in, n_in):
+        log_probs = _get_tf(self._input)
+        return selection_slice(log_probs, actions_in, n_in)
+
+    def get_entropy(self):
+        log_probs = _get_tf(self._input)
+        return -tf.reduce_sum(log_probs * tf.exp(log_probs))

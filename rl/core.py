@@ -1,6 +1,7 @@
-from gtml.util.memory import Memory
+from collections import defaultdict
 import numpy as np
 
+from gtml.util.tf import get_sess
 
 class Episode:
     def __init__(self):
@@ -9,6 +10,7 @@ class Episode:
         self.observations = []
         self.actions = []
         self.rewards = []
+        self.policy_outputs = defaultdict(list)
         self.done = False
 
     def latest_observation(self):
@@ -33,44 +35,42 @@ class Episode:
     def __len__(self):
         return len(self.actions)
 
+    # Act for a given number of steps or until the episode ends
+    def run(self, policy, steps, sess=None, render=False):
+        sess = get_sess(sess)
+        env = policy.env
+        taken = 0
+        if self.t == 0:
+            observation = env.reset()
+            self.observations.append(observation)
+
+        while taken < steps:
+            if render:
+                env.render()
+            results = policy.act([self.latest_observation()], sess=sess)
+            for key, value in results.items():
+                self.policy_outputs[key].extend(value)
+            action = results['_actions'][0]
+            self.actions.append(action)
+            next_observation, reward, done, info = env.step(action)
+            self.observations.append(next_observation)
+            self.rewards.append(reward)
+            self.done = done
+            taken += 1
+            self.t += 1
+            if done:
+                break
+
+        if self.done:
+            self.observations.pop()
+            self.finalize()
+            self.discounted_return = discounted_sum(self.rewards, env.discount)
+
+        return taken
+
 
 def discounted_sum(rewards, discount):
     return np.sum(np.array(rewards) * discount**np.arange(len(rewards)))
-
-def discounted_returns(rewards, discount):
-    # There is almost certainly a more efficient way to implement this
-    # but it's good enough for now
-    return np.array([np.sum(rewards[t:]) for t in range(len(rewards))])
-
-
-# Act for a given number of steps or until the episode ends
-def partial_rollout(policy, episode, steps, render=False):
-    env = policy.env
-    taken = 0
-    if episode.t == 0:
-        observation = env.reset()
-        episode.observations.append(observation)
-
-    while taken < steps:
-        if render:
-            env.render()
-        action = policy.get_action(episode.latest_observation())
-        episode.actions.append(action)
-        next_observation, reward, done, info = env.step(action)
-        episode.observations.append(next_observation)
-        episode.rewards.append(reward)
-        episode.done = done
-        taken += 1
-        episode.t += 1
-        if done:
-            break
-
-    if episode.done:
-        episode.observations.pop()
-        episode.finalize()
-        episode.discounted_return = discounted_sum(episode.rewards, env.discount)
-
-    return taken
 
 
 def rollout(policy, horizon=None, render=False):
@@ -78,7 +78,7 @@ def rollout(policy, horizon=None, render=False):
         horizon = float('inf')
 
     episode = Episode()
-    partial_rollout(policy, episode, horizon, render=render)
+    episode.run(policy, horizon, render=render)
     return episode
 
 def rollouts(policy, num_episodes, horizon=None, render=False):
