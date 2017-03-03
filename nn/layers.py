@@ -18,10 +18,10 @@ def _get_shape(o):
 
 class Layer:
     # input may be either a tf tensor or another Layer instance
-    def __init__(self, input, output, params):
+    def __init__(self, input, output, param_vars):
         self._input = input
         self._output = output
-        self._params = params
+        self._param_vars = param_vars
         self.name = None
 
     def get_input(self):
@@ -39,14 +39,20 @@ class Layer:
         else:
             return self._input.get_orig_input()
 
-    def get_params(self):
-        return self._params
+    def get_param_vars(self):
+        return self._params_vars
 
-    def get_all_params(self):
+    def get_all_param_vars(self):
         if isinstance(self._input, tf.Tensor):
-            return self._params
+            return self._param_vars
         else:
-            return self._input.get_all_params() + self._params
+            return self._input.get_all_param_vars() + self._param_vars
+
+    def get_all_layers(self):
+        if isinstance(self._input, tf.Tensor):
+            return [self._input, self]
+        else:
+            return self._input.get_all_layers() + [self]
 
     def eval(self, feed_dict, sess=None):
         if sess is None:
@@ -58,25 +64,27 @@ class Layer:
 
 
 class DenseLayer(Layer):
-    def __init__(self, input, size, nonlinearity, num_leading_axes=1):
+    def __init__(self, input, size, nonlinearity, num_leading_axes=1,
+            W_init=tf.random_normal_initializer(), b_init=tf.zeros_initializer()):
         input_tf = _get_tf(input)
         flattened_input = flatten(input_tf, num_leading_axes=num_leading_axes)
-        input_size = flattened_input.get_shape().as_list()[1]
-        self._W = tf.Variable(tf.random_normal([input_size, size], stddev=0.01))
-        self._b = tf.Variable(tf.zeros(size))
+        input_size = _get_shape(flattened_input)[1]
+        self._W = tf.Variable(W_init([input_size, size]))
+        self._b = tf.Variable(b_init([size]))
         pre_activation = tf.matmul(flattened_input, self._W) + self._b
         output = nonlinearity(pre_activation) if nonlinearity is not None else pre_activation
         super().__init__(input, output, [self._W, self._b])
 
 
 class ConvLayer(Layer):
-    def __init__(self, input, num_filters, filter_size, stride, nonlinearity, padding='SAME'):
+    def __init__(self, input, num_filters, filter_size, stride, nonlinearity, padding='SAME',
+            W_init=tf.random_normal_initializer(), b_init=tf.zeros_initializer()):
         input_tf = _get_tf(input)
         input_shape = _get_shape(input_tf)
         in_channels = input_shape[-1]
         out_channels = num_filters
-        self._W = tf.Variable(tf.random_normal([filter_size, filter_size, in_channels, out_channels], stddev=0.01))
-        self._b = tf.Variable(tf.zeros(out_channels))
+        self._W = tf.Variable(W_init([filter_size, filter_size, in_channels, out_channels]))
+        self._b = tf.Variable(b_init([out_channels]))
         self._params = [self._W, self._b]
         pre_activation = tf.nn.conv2d(input_tf, self._W,
                 strides=[1, stride, stride, 1], padding=padding) + self._b

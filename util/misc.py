@@ -3,7 +3,6 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import gtml.config as cfg
-from .file import logpath
 
 def superhash(obj):
     if isinstance(obj, np.ndarray):

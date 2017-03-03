@@ -9,9 +9,8 @@ from gtml.util.tf import flatten, get_sess, squared_error
 
 
 class A2C:
-    def __init__(self, setup_fn, optimizer=tf.train.AdamOptimizer(), reg_value_fit=0.25, reg_entropy=0.01):
-        ac = setup_fn()
-        policy = ac.policy
+    def __init__(self, ac, optimizer=tf.train.AdamOptimizer(), reg_critic=0.25, reg_entropy=0.01):
+        policy = ac.actor
         env = ac.env
 
         observations_in = ac.observations_in
@@ -25,7 +24,7 @@ class A2C:
         if reg_entropy != 0:
             actor_loss = actor_loss - reg_entropy * policy.get_entropy()
         critic_loss = squared_error(flatten(ac.critic.get_output()), returns_in)
-        loss = actor_loss + reg_value_fit * critic_loss
+        loss = actor_loss + reg_critic * critic_loss
         self.actor_loss = actor_loss
         self.critic_loss = critic_loss
         self.loss = loss
@@ -37,20 +36,21 @@ class A2C:
         self.advantages_in = advantages_in
         self.n_in = n_in
 
-    def run(self, Tmax, tmax=20, render=False, sess=None):
-        sess = get_sess(sess)
+    def run(self, engine, Tmax, tmax=20):
+        print('Running')
+        sess = get_sess(engine.sess)
         env = self.ac.env
-        episode = Episode()
+        episode = engine.new_episode()
         T = 0
         while T < Tmax:
-            steps = episode.run(self.ac, tmax, render=render, sess=sess)
+            steps = episode.run(self.ac, tmax)
             values = episode.policy_outputs['_values'][-steps:]
             T += steps
             if episode.done:
                 R = 0
                 observations = episode.observations[-steps:]
             else:
-                R = self.ac.critique([episode.observations[-1]])
+                R = self.ac.critique([episode.observations[-1]])[0]
                 observations = episode.observations[-(steps+1):-1]
             actions = episode.actions[-steps:]
             rewards = episode.rewards[-steps:]
@@ -60,6 +60,7 @@ class A2C:
                 returns[i] = R
 
             advantages = returns - values
+
             results = sess.run([self.actor_loss, self.critic_loss, self.train], {
                     self.observations_in: observations,
                     self.actions_in: actions,
@@ -71,4 +72,4 @@ class A2C:
 
             if episode.done:
                 print(episode.discounted_return)
-                episode = Episode()
+                episode = engine.new_episode()

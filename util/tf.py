@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import tensorflow as tf
 
 def get_sess(sess=None):
@@ -19,6 +20,18 @@ def mean_squared_error(x, y):
     return tf.reduce_mean((x - y)**2)
 
 # Adapted from http://stackoverflow.com/questions/37026425/elegant-way-to-select-one-element-per-row-in-tensorflow
-def selection_slice(matrix, idx, n):
-    # return matrix[tf.range(n),idx]
-    return tf.gather_nd(matrix, tf.transpose(tf.stack([tf.range(n), idx])))
+# def selection_slice(matrix, idx, n):
+#     # return matrix[tf.range(n),idx]
+#     return tf.gather_nd(matrix, tf.transpose(tf.stack([tf.range(n), idx])))
+
+def selection_slice(matrix, idx, unused):
+    return tf.reduce_sum(matrix * tf.one_hot(idx, matrix.get_shape()[1]), axis=1)
+
+def periodic_saver(variables, name, period):
+    saver = tf.train.Saver(variables)
+    def save(engine):
+        if engine.global_step % period == 0:
+            print('Saving...')
+            path = engine.log_path(name)
+            saver.save(get_sess(engine.sess), path, global_step=engine.global_step)
+    return save
