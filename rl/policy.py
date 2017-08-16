@@ -1,41 +1,39 @@
 import numpy as np
-import tensorflow as tf
+import tensorflow as tf; tfdists = tf.contrib.distributions
 
-from gtml.nn.network import Network
+from gtml.common.tf import get_sess
 
-class Policy(Network):
-    def __init__(self, env, policy, name=None):
-        self.env = env
-        self.policy = policy
-        self.observations_in = policy.get_orig_input()
-        self.names = [policy.name]
-        super().__init__([policy], name if name is not None else policy.name)
+
+class Policy:
+    def act(self, observations, sess=None):
+        raise NotImplementedError
+
+
+class TFPolicy(Policy):
+    def __init__(self, observations_in, actions):
+        self.observations_in = observations_in
+        self.actions = actions
 
     def act(self, observations, sess=None):
-        results = self.eval(self.names, {self.observations_in: observations}, sess=sess)
-        assert '_actions' not in results # reserved
-        results['_actions'] = results[self.policy.name]
-        return results
+        sess = get_sess(sess)
+        return sess.run(self.actions, feed_dict={self.observations_in: observations})
 
 
-# Special policy that also spits out value function estimates
-class ActorCritic(Policy):
-    def __init__(self, env, actor, critic, name):
-        self.actor = actor
-        self.critic = critic
-        super().__init__(env, actor)
-        self.names.append(critic.name)
-        # Network init already got called but it needs both outputs
-        Network.__init__(self, [actor, critic], name)
+class StochasticPolicy(TFPolicy):
+    def __init__(self, observations_in, pdist):
+        self.pdist = pdist
+        actions = pdist.sample()
+        TFPolicy.__init__(self, observations_in, actions)
 
-    def act(self, observations, sess=None):
-        results = self.eval(self.names, {self.observations_in: observations}, sess=sess)
-        assert '_actions' not in results # reserved
-        assert '_values' not in results  # reserved
-        results['_actions'] = results[self.actor.name].flatten()
-        results['_values'] = results[self.critic.name].flatten()
-        return results
+    def prob(self, actions):
+        return self.pdist.prob(actions)
 
-    def critique(self, observations, sess=None):
-        results = self.eval([self.critic.name], {self.observations_in: observations}, sess=sess)
-        return results[self.critic.name].flatten()
+    def entropy(self):
+        return self.pdist.entropy()
+
+
+class SoftmaxPolicy(StochasticPolicy):
+    def __init__(self, observations_in, logits):
+        self.logits = logits
+        pdist = tfdists.Categorical(logits=logits)
+        StochasticPolicy.__init__(self, observations_in, pdist)
