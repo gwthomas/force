@@ -19,11 +19,11 @@ def factory(env, observations_in, variable_manager):
                 strides=[4, 2, 1],
                 variable_manager=variable_manager)
         mlp_in = layers.flatten(conv_out)
-        hidden_layers = layers.dense(mlp_in, 'dense', 512, tf.nn.relu, variable_manager=variable_manager)
+        hidden_layers = layers.dense(mlp_in, 512, tf.nn.relu, variable_manager=variable_manager)
     else:
         hidden_layers = proto.mlp(observations_in, [64, 64], variable_manager=variable_manager, output_nl=tf.nn.relu)
-    logits = layers.dense(hidden_layers, 'logits', env.action_space.n, None)
-    value_fn = tf.squeeze(layers.dense(hidden_layers, 'value', 1, None))  # squeeze makes it a scalar
+    logits = layers.dense(hidden_layers, env.action_space.n, None, name='logits')
+    value_fn = tf.squeeze(layers.dense(hidden_layers, 1, None, name='values'))  # squeeze makes it a scalar
     return SoftmaxPolicy(observations_in, logits), value_fn
 
 def print_return(engine, episode):

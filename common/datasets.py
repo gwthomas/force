@@ -5,14 +5,21 @@ import numpy as np
 import os
 
 
-def unpickle(file):
+def unpickle(file, encoding=None):
     f = open(file, 'rb')
-    retval = pickle.load(f, encoding='latin1')
+    if encoding:
+        try:
+            retval = pickle.load(f, encoding=encoding)
+        except: # in python 2, load() doesn't accept encoding
+            retval = pickle.load(f)
+    else:
+        retval = pickle.load(f)
     f.close()
     return retval
 
 
 def load_cifar(dir):
+    encoding = 'latin1'
     def reshape_image(img):
         shape = (32,32)
         r = img[:1024].reshape(shape)
@@ -22,13 +29,13 @@ def load_cifar(dir):
 
     Xtrain, Ytrain, Xtest, Ytest = [], [], [], []
     for i in range(1,6):
-        batch_dict = unpickle(os.path.join(dir, 'data_batch_%i' % i))
+        batch_dict = unpickle(os.path.join(dir, 'data_batch_%i' % i), encoding=encoding)
         Xtrain.extend([reshape_image(img) for img in batch_dict['data']])
         Ytrain.extend(batch_dict['labels'])
     Xtrain = np.stack(Xtrain).astype(float)
     Ytrain = np.array(Ytrain)
 
-    test_dict = unpickle(os.path.join(dir, 'test_batch'))
+    test_dict = unpickle(os.path.join(dir, 'test_batch'), encoding=encoding)
     Xtest = np.stack([reshape_image(img) for img in test_dict['data']])
     Ytest = np.array(test_dict['labels'])
 

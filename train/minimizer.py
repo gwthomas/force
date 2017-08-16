@@ -39,7 +39,7 @@ class Minimizer(CallbackManager):
     # feeds should be a dictionary mapping placeholders to their data sources
     def epoch(self, feeds, sess=None):
         sess = get_sess(sess)
-        n = len(feeds[feeds.keys()[0]])
+        n = len(feeds[list(feeds.keys())[0]])
         for ph in feeds:
             assert n == len(feeds[ph])
 

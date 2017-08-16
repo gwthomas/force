@@ -1,58 +1,27 @@
 import gym
+import itertools as it
 import tensorflow as tf
 
-import gtml.config as cfg
-from gtml.nn.layers import *
-from gtml.rl.env import integral_dimensionality
+import gtml.nn.layers as layers
+from gtml.nn.variable import get_default_variable_manager
 
 
-def mlp(sizes, input=None, nl=tf.nn.relu, output_nl=None,
-        W_init=tf.random_normal_initializer(), b_init=tf.zeros_initializer()):
-    if input is None:
-        input = tf.placeholder(cfg.FLOAT_T, shape=[None, sizes[0]], name="mlp_in")
-
+def mlp(input, sizes, nl=tf.nn.relu, output_nl=None, variable_manager=get_default_variable_manager()):
     sofar = input
-    for size in sizes[:-1]:
-        sofar = DenseLayer(sofar, size, nl, W_init=W_init, b_init=b_init)
-    sofar = DenseLayer(sofar, sizes[-1], output_nl)
-
+    for l, size in enumerate(sizes):
+        nonlinearity = nl if l + 1 < len(sizes) else output_nl
+        name = 'mlp_layer_{}'.format(l)
+        sofar = layers.dense(sofar, size, nonlinearity, name=name, variable_manager=variable_manager)
     return sofar
 
-def mlp_for_env(env, hidden_sizes, nl=tf.nn.relu,
-        W_init=tf.random_normal_initializer(), b_init=tf.zeros_initializer()):
-    n_input = integral_dimensionality(env.observation_space)
-    n_output = integral_dimensionality(env.action_space)
-    output_nl = tf.nn.log_softmax if isinstance(env.action_space, gym.spaces.Discrete) else None
-    return mlp([n_input] + hidden_sizes + [n_output], nl=nl, output_nl=output_nl)
-
-
-def convnet(input_shape, filters, strides, dense_sizes,
-        poolings=None, input=None, conv_nl=tf.nn.relu, dense_nl=tf.nn.relu, output_nl=None,
-        W_init=tf.random_normal_initializer(), b_init=tf.zeros_initializer()):
-    assert len(input_shape) == 3
-    if input is None:
-        input = tf.placeholder(cfg.FLOAT_T, shape=[None]+list(input_shape), name="conv_in")
-
+def convnet(input, filters, strides, poolings=None, nl=tf.nn.relu, variable_manager=get_default_variable_manager()):
     poolings = [None]*len(filters) if poolings is None else poolings
     sofar = input
-    for filter, stride, pooling in zip(filters, strides, poolings):
-        num_filters, filter_size = filter
-        sofar = ConvLayer(sofar, num_filters, filter_size,
-                stride=stride, nonlinearity=conv_nl,
-                W_init=W_init, b_init=b_init)
-        if pooling is not None:
-            sofar = MaxPoolLayer(sofar, pooling)
-
-    return mlp(dense_sizes, input=sofar, nl=dense_nl, output_nl=output_nl)
-
-
-def dqn_atari(env, output_nl=tf.nn.log_softmax, m=4):
-    return convnet((m, 84, 84),
-            filters=[(32, 8), (64, 4), (64, 3)],
-            strides=[4, 2, 1],
-            dense_sizes=[512, env.action_space.n],
-            output_nl=output_nl)
-
-
-def shared_value_function(layer, W_init=tf.random_normal_initializer(), b_init=tf.zeros_initializer()):
-    return DenseLayer(layer.get_input(), 1, None, W_init=W_init, b_init=b_init)
+    for l, filter, stride, pooling in zip(it.count(), filters, strides, poolings):
+        n_filters, filter_size = filter
+        name = 'conv_layer_{}'.format(l)
+        sofar = layers.conv2d(sofar, n_filters, filter_size, stride=stride,
+                nonlinearity=nl, name=name, variable_manager=variable_manager)
+        # if pooling is not None:
+        #     sofar = layers.max_pool(???)
+    return sofar
