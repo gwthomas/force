@@ -1,5 +1,4 @@
-import numpy as np
-
+import random
 
 class Memory:
     def __init__(self, capacity):
@@ -22,7 +21,7 @@ class Memory:
             self._array.pop(0)
 
     def sample(self, n, replace=True):
-        indices = np.random.choice(len(self._array), size=n, replace=replace)
+        indices = random.choice(len(self._array), size=n, replace=replace)
         return [self._array[i] for i in indices]
 
     def recent(self, n):

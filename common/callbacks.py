@@ -1,5 +1,6 @@
 from collections import defaultdict
 
+
 class CallbackManager:
     def __init__(self):
         self._callbacks = defaultdict(list)

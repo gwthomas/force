@@ -1,42 +1,45 @@
 import gym
-import numpy as np
-import tensorflow as tf
+import torch
 
-from gtml.common.tf import init_sess
-import gtml.nn.layers as layers
 import gtml.nn.proto as proto
 from gtml.rl.engine import Engine
-from gtml.rl.env import Environment, AtariEnvironment
-from gtml.rl.policy import SoftmaxPolicy
+from gtml.rl.env import Environment, AtariEnvironment, integral_dimensionality
+from gtml.rl.policy import CategoricalPolicy, ActorCritic
 from gtml.rl.ppo import ProximalPolicyOptimization
 
 
-def factory(env, observations_in, variable_manager):
+def factory(env):
     basename = env.name.split('-')[0]
+    obs_space_dim = integral_dimensionality(env.observation_space)
+    action_space_dim = integral_dimensionality(env.action_space)
     if basename in ['Breakout']:
-        conv_out = proto.convnet(observations_in,
-                filters=[(32, 8), (64, 4), (64, 3)],
-                strides=[4, 2, 1],
-                variable_manager=variable_manager)
-        mlp_in = layers.flatten(conv_out)
-        hidden_layers = layers.dense(mlp_in, 512, tf.nn.relu, variable_manager=variable_manager)
+        net = proto.AtariNet(action_space_dim)
     else:
-        hidden_layers = proto.mlp(observations_in, [64, 64], variable_manager=variable_manager, output_nl=tf.nn.relu)
-    logits = layers.dense(hidden_layers, env.action_space.n, None, name='logits')
-    value_fn = tf.squeeze(layers.dense(hidden_layers, 1, None, name='values'))  # squeeze makes it a scalar
-    return SoftmaxPolicy(observations_in, logits), value_fn
+        net = proto.MLP([obs_space_dim, 100, action_space_dim])
+    if env.discrete_actions:
+        policy = CategoricalPolicy(net)
+    else:
+        policy = GaussianPolicy(net)
+    # valuefn = torch.nn.Linear(obs_space_dim, 1)
+    valuefn = proto.MLP([obs_space_dim, 100, 1])
+    # valuefn = proto.LinearFunction(net)
+    return ActorCritic(policy, valuefn)
 
 def print_return(engine, episode):
-    print(episode.total_reward)
+    k = 10
+    if len(engine.episodes) == k:
+        rewards = [episode.rewards.sum() for episode in engine.episodes.recent(k)]
+        avg_reward = float(torch.mean(torch.tensor(rewards)))
+        print('Average reward on last', k, 'episodes:', avg_reward)
+        engine.episodes.clear()
 
 def train(envname, render):
     env = Environment(envname)
     engine = Engine(env, render=render)
     engine.add_callback('post-episode', print_return)
-    ppo = ProximalPolicyOptimization(env, factory)
-    with tf.Session():
-        init_sess()
-        ppo.run(engine, n_iterations=int(1e6))
+    ac = factory(env)
+    ppo = ProximalPolicyOptimization(ac)
+    ppo.run(engine, int(1e6))
 
 
 if __name__ == '__main__':

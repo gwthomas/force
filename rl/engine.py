@@ -1,62 +1,77 @@
 from collections import defaultdict
-import numpy as np
+import gym
 import os
-from scipy.signal import lfilter
+import torch
 
 from gtml.common.callbacks import CallbackManager
 from gtml.common.memory import Memory
-from gtml.common.tf import get_sess
 
 
 class Episode:
     def __init__(self, engine):
         self.engine = engine
         self.t = 0
-        self.raw_observations = []
-        self.observations = []
-        self.actions = []
-        self.rewards = []
+        self.lobservations = []
+        self.lactions = []
+        self.lrewards = []
         self.done = False
-
-    def latest_observation(self):
-        return self.observations[-1] if len(self.observations) > 0 else None
-
-    def latest_action(self):
-        return self.actions[-1] if len(self.actions) > 0 else None
-
-    def latest_reward(self):
-        return self.rewards[-1] if len(self.rewards) > 0 else None
-
-    def latest_transition(self):
-        observation, next_observation = self.observations[-2:]
-        action = self.actions[-1]
-        reward = self.rewards[-1]
-        return observation, action, next_observation, reward
-
-    def finalize(self):
-        for key in ('raw_observations', 'observations', 'actions', 'rewards'):
-            setattr(self, key, np.array(getattr(self, key)))
 
     def __len__(self):
         return len(self.actions)
 
+    def latest_observation(self):
+        return self.lobservations[-1] if len(self.lobservations) > 0 else None
+
+    def latest_action(self):
+        return self.lactions[-1] if len(self.lactions) > 0 else None
+
+    def latest_reward(self):
+        return self.lrewards[-1] if len(self.lrewards) > 0 else None
+
+    def latest_transition(self):
+        if len(self.lobservations) < 2:
+            return None
+        observation, next_observation = self.lobservations[-2:]
+        action = self.lactions[-1]
+        reward = self.lrewards[-1]
+        return observation, action, next_observation, reward
+
+    def commit(self):
+        if self.lobservations is None:
+            return
+
+        self.observations = torch.stack(self.lobservations)
+        self.rewards = torch.Tensor(self.lrewards)
+        if self.engine.env.discrete_actions:
+            self.actions = torch.Tensor(self.lactions)
+        else:
+            self.actions = torch.stack(self.lactions)
+
+        # if self.done:
+        #     self.lobservations = None
+        #     self.lactions = None
+        #     self.lrewards = None
+
     # Act for a given number of steps or until the episode ends
     def run(self, policy, steps):
-        sess = get_sess(self.engine.sess)
         env = self.engine.env
         taken = 0
         if self.t == 0:
             observation = env.reset()
-            self.observations.append(observation)
+            observation = torch.Tensor(observation)
+            self.lobservations.append(observation)
 
         while taken < steps:
             if self.engine.render:
                 env.render()
-            action = policy.act([self.latest_observation()], sess=sess)[0]
-            self.actions.append(action)
+            action = policy.act1(self.latest_observation())
+            if env.discrete_actions:
+                action = int(action)
+            self.lactions.append(action)
             next_observation, reward, done, info = env.step(action)
-            self.observations.append(next_observation)
-            self.rewards.append(reward)
+            next_observation = torch.Tensor(next_observation)
+            self.lobservations.append(next_observation)
+            self.lrewards.append(reward)
             self.done = done
             taken += 1
             self.t += 1
@@ -65,19 +80,17 @@ class Episode:
             if done:
                 break
 
+        self.commit()
         if self.done:
-            self.finalize()
-            self.total_reward = np.sum(self.rewards)
             self.engine.run_callbacks('post-episode', episode=self)
 
         return taken
 
 
 class Engine(CallbackManager):
-    def __init__(self, env, episode_memory=1, render=False, sess=None):
+    def __init__(self, env, episode_memory=1000, render=False):
         CallbackManager.__init__(self)
         self.env = env
-        self.sess = sess
         self.global_step = 0
         self.episodes = Memory(episode_memory)
         self.render = render
@@ -100,4 +113,4 @@ class Engine(CallbackManager):
 
     def evaluate(self, policy, num_episodes=1, horizon=None):
         episodes = self.rollouts(policy, num_episodes, horizon=horizon)
-        return np.array([episode.discounted_return for episode in episodes])
+        return torch.tensor([episode.discounted_return for episode in episodes])

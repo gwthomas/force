@@ -3,6 +3,7 @@ except: import pickle
 
 import numpy as np
 import os
+import torch
 
 
 def unpickle(file, encoding=None):
@@ -18,14 +19,14 @@ def unpickle(file, encoding=None):
     return retval
 
 
-def load_cifar(dir):
+def load_cifar(dir, torchify=True):
     encoding = 'latin1'
     def reshape_image(img):
         shape = (32,32)
         r = img[:1024].reshape(shape)
         g = img[1024:2048].reshape(shape)
         b = img[2048:].reshape(shape)
-        return np.stack([r,g,b], axis=-1) / 255.0
+        return np.stack([r,g,b], axis=0) / 255.0
 
     Xtrain, Ytrain, Xtest, Ytest = [], [], [], []
     for i in range(1,6):
@@ -39,12 +40,15 @@ def load_cifar(dir):
     Xtest = np.stack([reshape_image(img) for img in test_dict['data']])
     Ytest = np.array(test_dict['labels'])
 
-    return Xtrain, Ytrain, Xtest, Ytest
+    if torchify:
+        return torch.Tensor(Xtrain), torch.LongTensor(Ytrain), torch.Tensor(Xtest), torch.LongTensor(Ytest)
+    else:
+        return Xtrain, Ytrain, Xtest, Ytest
 
 
-def load_mnist(dir):
+def load_mnist(dir, torchify=True):
     def reshape_images(imgs):
-        return imgs.reshape((len(imgs), 28, 28, 1)) / 255.0
+        return imgs.reshape((len(imgs), 1, 28, 28)) / 255.0
 
     from mnist import MNIST
     mndata = MNIST(dir)
@@ -52,4 +56,8 @@ def load_mnist(dir):
     Xtest, Ytest = map(np.array, mndata.load_testing())
     Xtrain = reshape_images(Xtrain).astype(float)
     Xtest = reshape_images(Xtest).astype(float)
-    return Xtrain, Ytrain, Xtest, Ytest
+
+    if torchify:
+        return torch.Tensor(Xtrain), torch.LongTensor(Ytrain), torch.Tensor(Xtest), torch.LongTensor(Ytest)
+    else:
+        return Xtrain, Ytrain, Xtest, Ytest

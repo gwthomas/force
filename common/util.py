@@ -1,26 +1,18 @@
-import pickle
-import os
-import numpy as np
-import matplotlib.pyplot as plt
+import torch
 
 from gtml.defaults import EPSILON
 
 
 def safelog(x, epsilon=EPSILON):
-    return np.log(x + epsilon)
+    return torch.log(x + epsilon)
 
 def one_hot(labels):
-    n = len(np.unique(labels))
-    return np.eye(n)[labels]
-
-def add_dim(array, axis=0):
-    shape = list(array.shape)
-    shape.insert(axis, 1)
-    return array.reshape(shape)
+    n = len(torch.unique(labels))
+    return torch.eye(n)[labels]
 
 # Flatten, then concatenate
-def conflattenate(arrays):
-    return np.concatenate([array.flatten() for array in arrays])
+# def conflattenate(arrays):
+    # return torch.concatenate([array.flatten() for array in arrays])
 
 def luminance(img):
     r, g, b = img[:,:,0], img[:,:,1], img[:,:,2]

@@ -1,8 +1,9 @@
-import tensorflow as tf
+import torch
 
 BATCHSIZE = 64
 EPSILON = 1e-8
-INT_T = tf.int64
-FLOAT_T = tf.float32
+DISCOUNT = 0.99
 GAE_LAMBDA = 0.98
-OPTIMIZER = tf.train.AdamOptimizer()
+
+def OPTIMIZER(params):
+    return torch.optim.Adam(params)

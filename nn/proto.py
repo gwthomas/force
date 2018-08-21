@@ -1,27 +1,80 @@
-import gym
-import itertools as it
-import tensorflow as tf
-
-import gtml.nn.layers as layers
-from gtml.nn.variable import get_default_variable_manager
+import torch; nn = torch.nn; F = torch.nn.functional
+from gtml.nn.util import batch_flatten
 
 
-def mlp(input, sizes, nl=tf.nn.relu, output_nl=None, variable_manager=get_default_variable_manager()):
-    sofar = input
-    for l, size in enumerate(sizes):
-        nonlinearity = nl if l + 1 < len(sizes) else output_nl
-        name = 'mlp_layer_{}'.format(l)
-        sofar = layers.dense(sofar, size, nonlinearity, name=name, variable_manager=variable_manager)
-    return sofar
+class MLP(nn.Module):
+    def __init__(self, sizes, softmax_out=False):
+        nn.Module.__init__(self)
+        self.sizes = sizes
+        self.layers = []
+        for i in range(len(sizes)-1):
+            layer = nn.Linear(sizes[i], sizes[i+1])
+            setattr(self, 'fc' + str(i), layer)
+            self.layers.append(layer)
+        self.softmax_out = softmax_out
 
-def convnet(input, filters, strides, poolings=None, nl=tf.nn.relu, variable_manager=get_default_variable_manager()):
-    poolings = [None]*len(filters) if poolings is None else poolings
-    sofar = input
-    for l, filter, stride, pooling in zip(it.count(), filters, strides, poolings):
-        n_filters, filter_size = filter
-        name = 'conv_layer_{}'.format(l)
-        sofar = layers.conv2d(sofar, n_filters, filter_size, stride=stride,
-                nonlinearity=nl, name=name, variable_manager=variable_manager)
-        # if pooling is not None:
-        #     sofar = layers.max_pool(???)
-    return sofar
+    def forward(self, x):
+        for fc in self.layers[:-1]:
+            x = F.relu(fc(x))
+        x = self.layers[-1](x)
+        if self.softmax_out:
+            x = F.softmax(x)
+        return x
+
+
+class LeNet(nn.Module):
+    def __init__(self, in_channels):
+        nn.Module.__init__(self)
+        self.conv1 = nn.Conv2d(in_channels, 6, 5)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.conv3 = nn.Conv2d(16, 120, 3)
+        self.pool = nn.MaxPool2d(2)
+        self.fc1 = None
+        self.fc2 = nn.Linear(84, 10)
+
+    def forward(self, x):
+        x = F.tanh(self.conv1(x))
+        x = self.pool(x)
+        x = F.tanh(self.conv2(x))
+        x = self.pool(x)
+        x = F.relu(self.conv3(x))
+        x = batch_flatten(x)
+        if self.fc1 is None:
+            self.fc1 = nn.Linear(x.size()[1], 84)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+
+class AtariNet(nn.Module):
+    def __init__(self, actions, in_channels=4):
+        nn.Module.__init__(self)
+        self.conv1 = nn.Conv2d(in_channels, 32, 8, stride=4)
+        self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
+        self.conv3 = nn.Conv2d(64, 64, 3, stride=1)
+        self.fc1 = None
+        self.fc2 = nn.Linear(512, actions)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        x = batch_flatten(x)
+        if self.fc1 is None:
+            self.fc1 = nn.Linear(x.size()[1], 512)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+
+class LinearFunction(nn.Module):
+    def __init__(self, input):
+        nn.Module.__init__(self)
+        self.fc = None
+
+    def forward(self, x):
+        x = batch_flatten(x)
+        if self.fc is None:
+            self.fc = nn.Linear(x.size()[1], 1)
+        x = self.fc(x)
+        return x
