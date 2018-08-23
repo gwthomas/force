@@ -3,8 +3,8 @@ import gym
 import os
 import torch
 
-from gtml.common.callbacks import CallbackManager
-from gtml.common.memory import Memory
+from gtml.callbacks import CallbackManager
+from gtml.memory import Memory
 
 
 class Episode:
@@ -58,7 +58,6 @@ class Episode:
         taken = 0
         if self.t == 0:
             observation = env.reset()
-            observation = torch.Tensor(observation)
             self.lobservations.append(observation)
 
         while taken < steps:
@@ -69,7 +68,6 @@ class Episode:
                 action = int(action)
             self.lactions.append(action)
             next_observation, reward, done, info = env.step(action)
-            next_observation = torch.Tensor(next_observation)
             self.lobservations.append(next_observation)
             self.lrewards.append(reward)
             self.done = done
@@ -82,6 +80,7 @@ class Episode:
 
         self.commit()
         if self.done:
+            self.discounted_return = float(self.rewards.sum())
             self.engine.run_callbacks('post-episode', episode=self)
 
         return taken

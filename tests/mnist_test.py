@@ -3,9 +3,9 @@ from __future__ import print_function
 import matplotlib.pyplot as plt
 import torch; nn = torch.nn; F = nn.functional; optim = torch.optim
 
-from gtml.common.datasets import load_mnist, load_cifar
+from gtml.datasets import load_mnist, load_cifar
 from gtml.defaults import *
-from gtml.nn.proto import *
+import gtml.nn.proto as proto
 from gtml.nn.opt import SupervisedLearning
 
 if __name__ == '__main__':
@@ -13,15 +13,20 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cifar', action='store_true')
     args = parser.parse_args()
-    cifar = args.cifar
-    print('Training on', 'CIFAR' if cifar else 'MNIST')
+    if args.cifar:
+        print('CIFAR')
+        Xtrain, Ytrain, Xtest, Ytest = load_cifar('cifar10')
+        channels = 3
+        size = 32
+    else:
+        print('MNIST')
+        Xtrain, Ytrain, Xtest, Ytest =  load_mnist('mnist')
+        channels = 1
+        size = 28
 
-    Xtrain, Ytrain, Xtest, Ytest = load_cifar('cifar10') if cifar else load_mnist('mnist')
-
-    net = LeNet(3 if cifar else 1)
+    net = proto.lenet(channels, size)
     criterion = nn.CrossEntropyLoss()
     # optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-    # optimizer = optim.Adam(net.parameters())
     train = SupervisedLearning(net, criterion)
 
     def print_loss(train, **kwargs):

@@ -35,10 +35,7 @@ class ProximalPolicyOptimization(Minimizer):
     def run(self, engine, n_iterations=1):
         episode = engine.new_episode()
         for itr in range(n_iterations):
-            observations = []
-            actions = []
-            advantages = []
-            value_targets = []
+            observations, actions, advantages, value_targets = [], [], [], []
             for _ in range(self.N):
                 steps_taken = episode.run(self.ac.policy, self.T)
                 new_observations = episode.observations[-(steps_taken+1):]

@@ -1,7 +1,7 @@
 import torch; nn = torch.nn
 from math import ceil
 
-from gtml.common.callbacks import CallbackManager
+from gtml.callbacks import CallbackManager
 from gtml.defaults import OPTIMIZER, BATCHSIZE
 
 
@@ -38,7 +38,7 @@ class Minimizer(CallbackManager):
             assert n == len(input)
 
         shuffled_indices = torch.randperm(n)
-        steps = ceil(float(n) / self.batchsize)
+        steps = int(ceil(float(n) / self.batchsize))
         losses = []
         for step in range(steps):
             start = step * self.batchsize
