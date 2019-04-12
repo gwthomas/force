@@ -2,9 +2,9 @@ import gym
 from scipy.misc import imresize
 import torch
 
-from gtml.memory import Memory
-from gtml.util import luminance
-from gtml.defaults import DISCOUNT
+from gtml.util import Memory
+from gtml.constants import DEFAULT_DISCOUNT
+
 
 def integral_dimensionality(space):
     if isinstance(space, gym.spaces.Discrete):
@@ -14,9 +14,11 @@ def integral_dimensionality(space):
 
 
 class Environment:
-    def __init__(self, name, discount=DISCOUNT, history=10):
+    def __init__(self, name, discount=DEFAULT_DISCOUNT, should_render=False,
+                 history=1):
         self.name = name
         self.discount = discount
+        self.should_render = should_render
         self.gym_env = gym.make(name)
         self.raw_obs_history = Memory(history)
 
@@ -44,8 +46,9 @@ class Environment:
         self.raw_obs_history.add(raw_observation)
         return self.preprocess(raw_observation), reward, done, info
 
-    def render(self):
-        self.gym_env.render()
+    def maybe_render(self):
+        if self.should_render:
+            self.gym_env.render()
 
     def preprocess(self, raw_observation):
         return raw_observation
@@ -53,8 +56,8 @@ class Environment:
 
 # Implements preprocessing method described in the paper by Mnih, et al.
 class AtariEnvironment(Environment):
-    def __init__(self, name, discount=0.99, m=4, size=(84,84)):
-        Environment.__init__(self, name, discount=discount, history=m)
+    def __init__(self, name, discount=DISCOUNT, should_render=False, m=4, size=(84,84)):
+        Environment.__init__(self, name, discount=discount, should_render=should_render, history=m)
         self.m = m
         self.size = size
 
@@ -76,3 +79,20 @@ class AtariEnvironment(Environment):
 
         # Stack and normalize pixel values
         return torch.stack(recent_frames) / 255.0
+
+ATARI_NAMES = [
+        'Alien', 'Amidar', 'Assault', 'Asterix', 'Asteroids',
+        'Atlantis', 'BankHeist', 'BattleZone', 'BeamRider', 'Bowling',
+        'Boxing', 'Breakout', 'Centipede', 'ChopperCommand', 'CrazyClimber',
+        'DemonAttack', 'DoubleDunk', 'Enduro', 'FishingDerby', 'Freeway',
+        'Frostbite', 'Gopher', 'Gravitar', 'IceHockey', 'Jamesbond',
+        'Kangaroo', 'Krull', 'KungFuMaster', 'MontezumaRevenge', 'MsPacman',
+        'NameThisGame', 'Pitfall', 'Pong', 'PrivateEye', 'Qbert',
+        'Riverraid', 'RoadRunner', 'Robotank', 'Seaquest', 'SpaceInvaders',
+        'StarGunner', 'Tennis', 'TimePilot', 'Tutankham', 'UpNDown',
+        'Venture', 'VideoPinball', 'WizardOfWor', 'Zaxxon'
+]
+
+def luminance(img):
+    r, g, b = img[:,:,0], img[:,:,1], img[:,:,2]
+    return 0.2126*r + 0.7152*g + 0.0722*b

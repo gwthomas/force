@@ -1,19 +1,35 @@
+import datetime
+import os
+
 import torch
 
-from gtml.defaults import EPSILON
+from gtml.constants import DEFAULT_TIMESTAMP_FORMAT, DATASETS_DIR
 
-
-def safelog(x, epsilon=EPSILON):
-    return torch.log(x + epsilon)
 
 def one_hot(labels):
     n = len(torch.unique(labels))
     return torch.eye(n)[labels]
 
-# Flatten, then concatenate
-# def conflattenate(arrays):
-    # return torch.concatenate([array.flatten() for array in arrays])
+def timestamp(format_string=DEFAULT_TIMESTAMP_FORMAT):
+    now = datetime.datetime.now()
+    return now.strftime(format_string)
 
-def luminance(img):
-    r, g, b = img[:,:,0], img[:,:,1], img[:,:,2]
-    return 0.2126*r + 0.7152*g + 0.0722*b
+def get_torch_dataset(which, train=True, test=True):
+    import torchvision
+    transform = torchvision.transforms.ToTensor()
+
+    if which == 'mnist':
+        data_class = torchvision.datasets.MNIST
+    elif which == 'cifar10':
+        data_class = torchvision.datasets.CIFAR10
+    else:
+        raise NotImplementedError('Dataset must be one of: mnist, cifar10')
+
+    train_set, test_set = None, None
+    if train:
+        train_set = data_class(DATASETS_DIR, train=True, transform=transform,
+                               download=True)
+    if test:
+        test_set = data_class(DATASETS_DIR, train=False, transform=transform,
+                              download=True)
+    return train_set, test_set
