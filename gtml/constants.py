@@ -1,3 +1,5 @@
+import torch
+
 # Defaults
 DEFAULT_EPSILON = 1e-8
 DEFAULT_DISCOUNT = 0.99
@@ -17,3 +19,6 @@ if len(_gtml_config.sections()) == 0:
 DATASETS_DIR = _gtml_config['paths']['DatasetsDir']
 EXPERIMENTS_DIR = _gtml_config['paths']['ExperimentsDir']
 del _gtml_config
+
+# PyTorch device to use for computation
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

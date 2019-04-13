@@ -9,6 +9,7 @@ import torchvision.models as models
 
 from gtml.callbacks import *
 from gtml.config import Configuration
+from gtml.constants import DEVICE
 from gtml.experiment import Experiment
 from gtml.train import EpochalMinimizer
 from gtml.test import test
@@ -34,6 +35,7 @@ def main(cfg):
 
     # Instantiate model and training procedure
     model = models.resnet18(num_classes=10)
+    model.to(DEVICE)
 
     parameters = model.parameters()
     criterion = torch.nn.CrossEntropyLoss()
@@ -87,7 +89,7 @@ def main(cfg):
 
     if torch.cuda.is_available():
         exp.log('CUDA is available')
-        model = model.to('cuda:0')
+        model.to('cuda:0')
     else:
         exp.log('CUDA is not available :(')
 
