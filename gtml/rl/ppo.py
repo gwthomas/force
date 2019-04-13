@@ -2,7 +2,6 @@ import copy
 import torch
 
 from gtml.constants import DEFAULT_BATCHSIZE, DEFAULT_GAE_LAMBDA
-from gtml.nn.opt import Minimizer
 from gtml.rl.core import Episode
 from gtml.rl.env import *
 from gtml.rl.gae import estimate_advantages_and_value_targets

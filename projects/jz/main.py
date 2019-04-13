@@ -22,7 +22,6 @@ LR_SCHEDULE_OPTIONS = Enumeration(['multi_step', 'cosine_annealing'])
 cfg = Config({
     'dataset': Require(DATASET_OPTIONS),
     'lr_schedule': Require(LR_SCHEDULE_OPTIONS),
-    'model': Require(str),
     'n_epochs': 200,
     'batch_size': 128
 })
@@ -34,8 +33,8 @@ def main(load):
     n = len(train_set)
     steps_per_epoch = int(math.ceil(n / cfg['batch_size']))
 
-    # Instantiate modelwork and training procedure
-    model = getattr(models, cfg['model'])()
+    # Instantiate model and training procedure
+    model = models.resnet18(num_classes=10)
     criterion = torch.nn.CrossEntropyLoss()
     L = lambda x, y: criterion(model(x), y)
     optimizer = torch.optim.Adam(model.parameters())
@@ -83,7 +82,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('dataset', type=str)
     parser.add_argument('--lr_schedule', type=str, default='cosine_annealing')
-    parser.add_argument('--model', type=str, default='resnet18')
     parser.add_argument('--load', default=None)
     args = parser.parse_args()
     cfg.update(vars(args))
