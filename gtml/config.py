@@ -1,50 +1,36 @@
-import copy
-
-from gtml.core import Enumeration
+from argparse import ArgumentParser
 
 
-class Require:
-    def __init__(self, template):
-        assert isinstance(template, Enumeration) or isinstance(template, type)
-        self.template = template
-
-    def resolve(self, x):
-        if isinstance(self.template, Enumeration):
-            return self.template.resolve(x)
-        elif isinstance(self.template, type):
-            if not isinstance(x, self.template):
-                raise ValueError('Invalid type: {}. Expected: {}'.format(type(x), self.template))
-            return x
-        else:
-            raise ValueError('Invalid argument: {}'.format(x))
-
-
-class Config:
-    def __init__(self, description):
-        self.d = copy.deepcopy(description)
-        self.verified = False
-
-    def __getitem__(self, key):
-        return self.d[key]
-
-    def update(self, d, verify=True, raise_on_extra=False):
-        for key, value in d.items():
-            if key in self.d:
-                existing = self.d[key]
-                if isinstance(existing, Require):
-                    self.d[key] = existing.resolve(value)
-                else:
-                    self.d[key] = value
+class Configuration:
+    def __init__(self, entries):
+        ''' entries should be a list of triples, each consisting of
+                (name,
+                 possibilities,
+                 default)
+            possilibities should be a type or a list of values
+            If default is None, the entry's value must be passed via the command line
+        '''
+        self.entries = entries
+        self.parser = ArgumentParser()
+        for name, possibilities, default in self.entries:
+            if isinstance(possibilities, type):
+                type_arg = possibilities
+            elif isinstance(possibilities, list):
+                type_arg = str
             else:
-                print('Extra key:', format(key))
-                if raise_on_extra:
-                    raise RuntimeError('raise_on_extra triggered')
+                raise RuntimeError('Invalid possibilities: {}'.format(possibilities))
 
-        if verify:
-            self.verify()
+            name_arg = name if default is None else '--' + name
+            self.parser.add_argument(name_arg, type=type_arg, default=default)
 
-    def verify(self):
-        for key, value in self.d.items():
-            if isinstance(value, Require):
-                raise RuntimeError('Required item {} not specified'.format(key))
-        self.verified = True
+    def parse(self):
+        args = self.parser.parse_args()
+        for name, possibilities, default in self.entries:
+            val = getattr(args, name)
+            if isinstance(possibilities, type):
+                if not isinstance(val, possibilities):
+                    raise TypeError('Invalid argument: {}. Expected type {}'.format(val, possibilities))
+            elif isinstance(possibilities, list):
+                if val not in possibilities:
+                    raise ValueError('Invalid argument: {}. Options: {}'.format(val, possibilities))
+        return args

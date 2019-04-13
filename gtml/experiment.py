@@ -1,4 +1,6 @@
+import glob
 import os
+import string
 
 import torch
 
@@ -13,9 +15,9 @@ class Data(dict):
 
 
 class Experiment:
-    def __init__(self, name, serializables={}, ensure_new=False, ensure_exists=False):
+    def __init__(self, name, serializables=None, ensure_new=False, ensure_exists=False):
         self.name = name
-        self.serializables = serializables
+        self.serializables = {} if serializables is None else serializables
         self.data = Data()
         self.dir = os.path.join(EXPERIMENTS_DIR, name)
 
@@ -52,31 +54,52 @@ class Experiment:
         print(output)
         self.log_file.write(output + '\n')
 
+    def register_serializable(self, name, serializable):
+        self.serializables[name] = serializable
+
     def load(self, index, raise_on_missing=True, raise_on_extra=False):
+        self.log('Attempting to load from checkpoint {}', index)
         self.data = torch.load(self.data_path(index))
         checkpoint = torch.load(self.checkpoint_path(index))
 
-        available = set(checkpoint.keys())
-        requested = set(self.serializables.keys())
-        loaded = set()
+        existing_keys = set(checkpoint.keys())
+        requested_keys = set(self.serializables.keys())
 
-        missing = requested - available
+        missing = requested_keys - existing_keys
         if missing:
-            self.log('WARNING: the following states were requested but not available:', list(missing))
+            self.log('WARNING: the following serializable keys were requested but do not exist in the checkpoint:', list(missing))
             if raise_on_missing:
                 raise RuntimeError('raise_on_missing triggered')
 
-        extra = available - requested
+        extra = existing_keys - requested_keys
         if extra:
-            self.log('WARNING: the following states were available but not requested:', list(extra))
+            self.log('WARNING: the following serialiables exist in the checkpoint but were not requested:', list(extra))
             if raise_on_extra:
                 raise RuntimeError('raise_on_extra triggered')
 
-        for name in requested:
-            if name in available:
-                self.serializables[name].load_state_dict(checkpoint[name])
+        for key in requested_keys:
+            if key in existing_keys:
+                self.serializables[key].load_state_dict(checkpoint[key])
 
-        self.log('Load completed successfully')
+        self.log('Load successful!')
+
+    # Note: this assumes checkpoints are indexed by integers
+    def load_latest(self, raise_on_missing=True, raise_on_extra=False):
+        checkpoint_indices = []
+        for path in glob.glob(self.checkpoint_path('*')):
+            filename = os.path.basename(path)
+            digits = filename.lstrip('checkpoint_').rstrip('.pt')
+            checkpoint_indices.append(int(digits))
+
+        if len(checkpoint_indices) == 0:
+            self.log('No available checkpoints')
+            return False
+
+        sorted_indices = sorted(checkpoint_indices)
+        self.log('Available checkpoint indices: {}', sorted_indices)
+        latest_index = sorted_indices[-1]
+        self.load(latest_index)
+        return True
 
     def save(self, index):
         checkpoint = {name: obj.state_dict() for name, obj in self.serializables.items()}

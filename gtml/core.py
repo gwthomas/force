@@ -10,19 +10,3 @@ class Serializable:
     def load_state_dict(self, d):
         for attr in self._state_attrs():
             setattr(self, attr, d[attr])
-
-
-class Enumeration:
-    def __init__(self, options):
-        if isinstance(options, list) or isinstance(options, tuple):
-            self.options = {x:x for x in options}
-        elif isinstance(options, dict):
-            self.options = options.copy()
-        else:
-            raise ValueError
-
-    def resolve(self, x):
-        if x in self.options:
-            return self.options[x]
-        else:
-            raise ValueError('Invalid argument: {}. Options: {}'.format(x, tuple(self.options.keys())))

@@ -1,13 +1,21 @@
 import torch
+from torch.utils.data import DataLoader
 
 from gtml.constants import DEFAULT_BATCH_SIZE
 
 
-def test(model, test_set, batch_size=DEFAULT_BATCH_SIZE):
+def zero_one(y_hat, y):
+    return y_hat == y
+
+def test(model, test_set, criterion=zero_one, batch_size=DEFAULT_BATCH_SIZE):
+    data_loader = DataLoader(test_set, batch_size=batch_size)
     model.eval()
-    results = []
-    for x, y in test_set:
-        prediction = model(torch.unsqueeze(x,0)).argmax()
-        results.append((prediction == y).item())
+    with torch.no_grad():
+        batch_results = []
+        for x, y in data_loader:
+            y_hat = model(x).argmax(dim=1)
+            batch_results.append(criterion(y_hat, y))
+        all_results = torch.cat(batch_results)
+        retval = all_results.float().mean().item()
     model.train()
-    return torch.Tensor(results).mean().item()
+    return retval
