@@ -49,8 +49,7 @@ class EpochalMinimizer(Minimizer):
         while self.epochs_taken < max_epochs:
             self.run_callbacks('pre_epoch', self.epochs_taken)
             for batch in self.data_loader:
-                for item in batch:
-                    item.to(DEVICE)
+                batch = [item.to(DEVICE) for item in batch]
                 self.step(*batch)
             self.epochs_taken += 1
             self.run_callbacks('post_epoch', self.epochs_taken)
