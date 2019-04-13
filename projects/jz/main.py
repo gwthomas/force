@@ -88,6 +88,8 @@ def main(cfg):
     if torch.cuda.is_available():
         exp.log('CUDA is available')
         model = model.to('cuda:0')
+    else:
+        exp.log('CUDA is not available :(')
 
     train.run(cfg.n_epochs)
 
