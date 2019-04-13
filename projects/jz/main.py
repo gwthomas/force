@@ -34,6 +34,7 @@ def main(cfg):
 
     # Instantiate model and training procedure
     model = models.resnet18(num_classes=10)
+
     parameters = model.parameters()
     criterion = torch.nn.CrossEntropyLoss()
     L = lambda x, y: criterion(model(x), y)
@@ -52,7 +53,7 @@ def main(cfg):
         T_max = steps_per_epoch * cfg.n_epochs
         lr_scheduler = CosineAnnealingLR(optimizer, T_max=T_max, eta_min=1e-3)
     else:
-        raise
+        raise NotImplementedError(cfg.algorithm)
 
     train = EpochalMinimizer(L, optimizer, train_set, cfg.batch_size)
 
@@ -83,6 +84,10 @@ def main(cfg):
         exp.load_latest()
     else:
         exp.load(index=cfg.load)
+
+    if torch.cuda.is_available():
+        exp.log('CUDA is available')
+        model = model.to('cuda:0')
 
     train.run(cfg.n_epochs)
 
