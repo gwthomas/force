@@ -25,7 +25,7 @@ class Plot:
             data = self.curves[name]
             if callable(data):
                 data = data()
-            plt.plot(data, 'b-')
+            plt.plot(data)
         if len(names) > 1:
             plt.legend(names)
 

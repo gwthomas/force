@@ -19,10 +19,10 @@ import gtml.util as util
 cfg_template = Configuration([
     ('dataset', ['mnist', 'cifar10'], None),
     ('algorithm', ['sgd', 'adam'], 'adam'),
-    ('lr_schedule', ['multi_step', 'cosine_annealing'], 'multi_step'),
+    ('lr_schedule', ['multi-step', 'cosine-annealing'], 'multi-step'),
     ('weight_decay', float, 1e-4),
     ('momentum', float, 0.9),
-    ('n_epochs', int, 200),
+    ('n_epochs', int, 175),
     ('batch_size', int, 128),
     ('load', int, -1)
 ])
@@ -35,23 +35,27 @@ def main(cfg):
 
     # Instantiate model and training procedure
     model = models.resnet18(num_classes=10)
-    model.to(DEVICE)
+    if torch.cuda.is_available():
+        print('CUDA is available')
+        model.to(DEVICE)
+    else:
+        print('CUDA is not available :(')
 
     parameters = model.parameters()
     criterion = torch.nn.CrossEntropyLoss()
     L = lambda x, y: criterion(model(x), y)
 
     if cfg.algorithm == 'sgd':
-        optimizer = torch.optim.SGD(parameters, lr=0.1, momentum=args.momentum,
+        optimizer = torch.optim.SGD(parameters, lr=0.1, momentum=cfg.momentum,
                                     weight_decay=cfg.weight_decay)
     elif cfg.algorithm == 'adam':
         optimizer = torch.optim.Adam(parameters, weight_decay=cfg.weight_decay)
     else:
         raise NotImplementedError(cfg.algorithm)
 
-    if cfg.lr_schedule == 'multi_step':
-        lr_scheduler = MultiStepLR(optimizer, milestones=[50], gamma=0.1)
-    elif cfg.lr_schedule == 'cosine_annealing':
+    if cfg.lr_schedule == 'multi-step':
+        lr_scheduler = MultiStepLR(optimizer, milestones=[75,125], gamma=0.1)
+    elif cfg.lr_schedule == 'cosine-annealing':
         T_max = steps_per_epoch * cfg.n_epochs
         lr_scheduler = CosineAnnealingLR(optimizer, T_max=T_max, eta_min=1e-3)
     else:
@@ -60,12 +64,12 @@ def main(cfg):
     train = EpochalMinimizer(L, optimizer, train_set, cfg.batch_size)
 
     # Setup logging/data collection
-    exp = Experiment('reproduce', serializables={
-        'model': model,
-        'optimizer': optimizer,
-        'lr_scheduler': lr_scheduler,
-        'train': train
-    })
+    experiment_name = '{}_{}_{}'.format(cfg.dataset, cfg.algorithm, cfg.lr_schedule)
+    exp = Experiment(experiment_name,
+                     serializables={'model': model,
+                                    'optimizer': optimizer,
+                                    'lr_scheduler': lr_scheduler,
+                                    'train': train})
 
     def post_step_callback(steps_taken, loss):
         exp.log('Iteration {}: loss = {}', steps_taken, loss)
@@ -86,12 +90,6 @@ def main(cfg):
         exp.load_latest()
     else:
         exp.load(index=cfg.load)
-
-    if torch.cuda.is_available():
-        exp.log('CUDA is available')
-        model.to('cuda:0')
-    else:
-        exp.log('CUDA is not available :(')
 
     train.run(cfg.n_epochs)
 
