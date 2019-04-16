@@ -41,6 +41,14 @@ class Configuration:
                     if isinstance(value, possibility):
                         match = True
                         break
+                    
+                    # Not already the right type, but try casting it
+                    try:
+                        value = possibility(value)
+                        match = True
+                        break
+                    except:
+                        pass
                 else:
                     if value == possibility:
                         match = True

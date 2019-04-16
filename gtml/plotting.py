@@ -13,12 +13,14 @@ class Plot:
     def add(self, name, data):
         self.curves[name] = data
 
-    def plot(self, show=True, save_path=None):
+    def plot(self, ylim=None, show=True, save_path=None):
         plt.figure()
         plt.xlabel(self.xlabel)
         plt.ylabel(self.ylabel)
         if self.title is not None:
             plt.title(self.title)
+        if ylim is not None:
+            plt.ylim(ylim)
 
         names = list(self.curves.keys())
         for name in names:

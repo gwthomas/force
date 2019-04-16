@@ -22,5 +22,5 @@ def load_test():
         transforms.ToTensor(),
         transforms.Normalize(PIXEL_MEAN, PIXEL_STD),
     ])
-    return = datasets.CIFAR10(DATASETS_DIR, train=False, transform=transform,
+    return datasets.CIFAR10(DATASETS_DIR, train=False, transform=transform,
                               download=True)
