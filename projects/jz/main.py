@@ -4,11 +4,12 @@ import os
 import pdb
 
 import torch
+import torch.nn as nn
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import Subset
 
 from gtml.callbacks import *
-import gtml.cifar10 as cifar10
+import gtml.datasets as datasets
 from gtml.config import Configuration, REQUIRED
 from gtml.constants import DEVICE
 from gtml.experiment import Experiment
@@ -28,19 +29,24 @@ cfg_template = Configuration([
     ('load_exp', (str, None), None),
     ('load_index', (int, None), None),
     ('stage', ('1', '2', None), None),
-    ('p', float, 0.5)
+    ('p', float, 0.5),
+    ('linear', bool, False)
 ])
 
 
-def run(cfg, exp_name, train_set, test_set):
-    # Setup model
-    model = resnet.PreActResNet18()
-    if torch.cuda.is_available():
-        print('CUDA is available :)')
-        model.to(DEVICE)
-    else:
-        print('CUDA is not available :(')
+class LinearModel(nn.Module):
+    def __init__(self, d_in, d_out):
+        super(LinearModel, self).__init__()
+        self.linear = nn.Linear(d_in, d_out)
 
+    def forward(self, x):
+        x = x.view(x.size(0), -1)
+        x = self.linear(x)
+        x = nn.functional.log_softmax(x)
+        return x
+
+
+def run(cfg, exp_name, train_set, test_set, model):
     parameters = model.parameters()
     criterion = torch.nn.CrossEntropyLoss()
     L = lambda x, y: criterion(model(x), y)
@@ -64,7 +70,7 @@ def run(cfg, exp_name, train_set, test_set):
             'lr_scheduler': lr_scheduler,
             'train': train
     })
-    
+
     load_exp = exp if cfg.load_exp is None else \
                Experiment(cfg.load_exp, serializables={
                     'model': model,
@@ -75,10 +81,10 @@ def run(cfg, exp_name, train_set, test_set):
         load_exp.load_latest()
     else:
         load_exp.load(index=cfg.load_index)
-        
+
     if cfg.load_exp is not None:
         exp.data = load_exp.data
-        
+
     def post_step_callback(steps_taken, loss):
         exp.log('Iteration {}: loss = {}', steps_taken, loss)
         exp.data.append('loss', loss)
@@ -98,8 +104,12 @@ def run(cfg, exp_name, train_set, test_set):
 
 
 def main(cfg):
-    train_set = cifar10.load_train()
-    test_set = cifar10.load_test()
+    if cfg.linear:
+        train_set, test_set = datasets.load_mnist()
+        model = LinearModel(28*28, 10)
+    else:
+        train_set, test_set = datasets.load_cifar10()
+        model = resnet.PreActResNet18()
 
     if cfg.stage == None:
         exp_name = 'standard_{}'.format(cfg.algorithm)
@@ -112,7 +122,10 @@ def main(cfg):
         train_set = Subset(train_set, partition1 if cfg.stage == '1' else partition2)
         exp_name = 'stage{}_{}_{}'.format(cfg.stage, cfg.algorithm, cfg.p)
 
-    run(cfg, exp_name, train_set, test_set)
+    if cfg.linear:
+        exp_name = 'linear_' + exp_name
+
+    run(cfg, exp_name, train_set, test_set, model)
 
 if __name__ == '__main__':
     main(cfg_template.parse())
