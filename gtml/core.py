@@ -10,3 +10,11 @@ class Serializable:
     def load_state_dict(self, d):
         for attr in self._state_attrs():
             setattr(self, attr, d[attr])
+
+
+class StateContainer(Serializable):
+    def __init__(self, value):
+        self.value = value
+
+    def _state_attrs(self):
+        return ['value']

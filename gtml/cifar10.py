@@ -4,19 +4,23 @@ import torchvision.transforms as transforms
 from gtml.constants import DATASETS_DIR
 
 
-def load_cifar10():
-    transform_train = transforms.Compose([
+PIXEL_MEAN = (0.4914, 0.4822, 0.4465)
+PIXEL_STD = (0.2470, 0.2435, 0.2616)
+
+def load_train():
+    transform = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        transforms.Normalize(PIXEL_MEAN, PIXEL_STD),
     ])
+    return datasets.CIFAR10(DATASETS_DIR, train=True, transform=transform,
+                            download=True)
 
-    transform_test = transforms.Compose([
+def load_test():
+    transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        transforms.Normalize(PIXEL_MEAN, PIXEL_STD),
     ])
-
-    train_set = datasets.CIFAR10(DATASETS_DIR, train=True, transform=transform_train, download=True)
-    test_set = datasets.CIFAR10(DATASETS_DIR, train=False, transform=transform_test, download=True)
-    return train_set, test_set
+    return = datasets.CIFAR10(DATASETS_DIR, train=False, transform=transform,
+                              download=True)
