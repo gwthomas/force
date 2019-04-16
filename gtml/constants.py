@@ -6,6 +6,7 @@ DEFAULT_DISCOUNT = 0.99
 DEFAULT_GAE_LAMBDA = 0.98
 DEFAULT_BATCH_SIZE = 128
 DEFAULT_TIMESTAMP_FORMAT = '%m-%d-%y_%H.%M.%S'
+DEFAULT_NUM_WORKERS = 2
 
 # Some global variables are to be read from disk so that their values can vary
 # from one machine to another without modifying this file.

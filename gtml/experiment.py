@@ -15,11 +15,11 @@ class Data(dict):
 
 
 class Experiment:
-    def __init__(self, name, serializables=None, ensure_new=False, ensure_exists=False):
+    def __init__(self, name, exp_dir=EXPERIMENTS_DIR, serializables=None, ensure_new=False, ensure_exists=False):
         self.name = name
         self.serializables = {} if serializables is None else serializables
         self.data = Data()
-        self.dir = os.path.join(EXPERIMENTS_DIR, name)
+        self.dir = os.path.join(exp_dir, name)
 
         if os.path.isfile(self.log_path): # Check for existing data
             print('Found existing experiment at {}'.format(self.dir))
@@ -35,8 +35,7 @@ class Experiment:
                 exit(1)
 
             print('Creating experiment')
-            if not os.path.isdir(self.dir):
-                os.makedirs(self.dir)
+            os.makedirs(self.dir, exist_ok=True)
             self.log_file = open(self.log_path, 'w')
 
     @property

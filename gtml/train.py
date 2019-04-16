@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from gtml.callbacks import CallbackManager
-from gtml.constants import DEFAULT_BATCH_SIZE, DEVICE
+from gtml.constants import DEFAULT_BATCH_SIZE, DEFAULT_NUM_WORKERS, DEVICE
 from gtml.core import Serializable
 
 
@@ -35,12 +35,14 @@ class Minimizer(CallbackManager, Serializable):
 
 class EpochalMinimizer(Minimizer):
     def __init__(self, compute_loss, optimizer, dataset,
-                 batch_size=DEFAULT_BATCH_SIZE):
+                 batch_size=DEFAULT_BATCH_SIZE,
+                 num_workers=DEFAULT_NUM_WORKERS):
         Minimizer.__init__(self, compute_loss, optimizer)
         self.batch_size = batch_size
         self.epochs_taken = 0
         self.data_loader = DataLoader(dataset, batch_size=batch_size,
-                                      shuffle=True, pin_memory=True)
+                                      shuffle=True, pin_memory=True,
+                                      num_workers=num_workers)
 
     def _state_attrs(self):
         return Minimizer._state_attrs(self) + ['epochs_taken']

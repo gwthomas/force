@@ -5,36 +5,37 @@ import pdb
 
 import torch
 from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
-import torchvision.models as models
 
 from gtml.callbacks import *
-from gtml.config import Configuration
+from gtml.cifar10 import load_cifar10
+from gtml.config import Configuration, REQUIRED
 from gtml.constants import DEVICE
 from gtml.experiment import Experiment
+import gtml.models.resnet as resnet
 from gtml.train import EpochalMinimizer
 from gtml.test import test
 import gtml.util as util
 
 
 cfg_template = Configuration([
-    ('dataset', ['mnist', 'cifar10'], None),
-    ('algorithm', ['sgd', 'adam'], 'adam'),
-    ('lr_schedule', ['multi-step', 'cosine-annealing'], 'multi-step'),
+    ('dataset', ('mnist', 'cifar10'), REQUIRED),
+    ('algorithm', ('sgd', 'adam'), 'adam'),
+    ('lr_schedule', ('multi-step', 'cosine-annealing'), 'multi-step'),
     ('weight_decay', float, 1e-4),
     ('momentum', float, 0.9),
     ('n_epochs', int, 175),
     ('batch_size', int, 128),
-    ('load', int, -1)
+    ('load', (int, None), None)
 ])
 
 def main(cfg):
     # Load data
-    train_set, test_set = util.get_torch_dataset(cfg.dataset)
+    train_set, test_set = load_cifar10()
     n = len(train_set)
     steps_per_epoch = int(math.ceil(n / cfg.batch_size))
 
     # Instantiate model and training procedure
-    model = models.resnet18(num_classes=10)
+    model = resnet.PreActResNet18()
     if torch.cuda.is_available():
         print('CUDA is available')
         model.to(DEVICE)
@@ -86,7 +87,7 @@ def main(cfg):
     train.add_callback('pre_epoch', lr_scheduler.step)
     train.add_callback('post_epoch', post_epoch_callback)
 
-    if cfg.load == -1:
+    if cfg.load is None:
         exp.load_latest()
     else:
         exp.load(index=cfg.load)
