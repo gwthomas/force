@@ -3,6 +3,24 @@ from argparse import ArgumentParser
 
 REQUIRED = '__REQUIRED__'
 
+# To be used for boolean objects, because argparse does not play nicely
+# with the built-in bool type
+class boolean:
+    def __init__(self, s):
+        if s in (True, 1, 'True', '1', 'true', 'yes'):
+            self.value = True
+        elif s in (False, 0, 'False', '0', 'false', 'no'):
+            self.value = False
+        else:
+            raise ValueError('Cannot convert {} to boolean'.format(self.s))
+    
+    def __bool__(self):
+        return self.value
+    
+    def __repr__(self):
+        return '<boolean value={}>'.format(self.value)
+        
+
 class Configuration:
     def __init__(self, entries):
         ''' entries should be a list of triples, each consisting of

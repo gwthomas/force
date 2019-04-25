@@ -13,8 +13,8 @@ class Plot:
     def add(self, name, data):
         self.curves[name] = data
 
-    def plot(self, ylim=None, show=True, save_path=None):
-        plt.figure()
+    def plot(self, figsize=None, ylim=None, show=True, save_path=None):
+        plt.figure(figsize=figsize)
         plt.xlabel(self.xlabel)
         plt.ylabel(self.ylabel)
         if self.title is not None:

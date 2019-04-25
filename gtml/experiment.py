@@ -4,7 +4,7 @@ import string
 
 import torch
 
-from gtml.constants import EXPERIMENTS_DIR
+from gtml.constants import EXPERIMENTS_DIR, DEVICE
 
 
 class Data(dict):
@@ -15,21 +15,25 @@ class Data(dict):
 
 
 class Experiment:
-    def __init__(self, name, exp_dir=EXPERIMENTS_DIR, serializables=None, ensure_new=False, ensure_exists=False):
+    def __init__(self, name, exp_dir=EXPERIMENTS_DIR, serializables=None,
+                 ensure_new=False, ensure_exists=False, verbose=True):
         self.name = name
         self.serializables = {} if serializables is None else serializables
         self.data = Data()
         self.dir = os.path.join(exp_dir, name)
+        self.verbose = verbose
 
         if os.path.isfile(self.log_path): # Check for existing data
-            print('Found existing experiment at {}'.format(self.dir))
+            if self.verbose:
+                print('Found existing experiment at {}'.format(self.dir))
             if ensure_new:
                 print('ensure_new is True; exiting')
                 exit(1)
 
             self.log_file = open(self.log_path, 'a')
         else:
-            print('No experiment exists at {}'.format(self.dir))
+            if self.verbose:
+                print('No experiment exists at {}'.format(self.dir))
             if ensure_exists:
                 print('ensure_exists is True; exiting')
                 exit(1)
@@ -58,25 +62,29 @@ class Experiment:
 
     def load(self, index, load_data=True, load_checkpoint=True,
              raise_on_missing=True, raise_on_extra=False):
-        self.log('Attempting to load from checkpoint {}', index)
+        if self.verbose:
+            self.log('Attempting to load from checkpoint {}', index)
         if load_data:
             self.data = torch.load(self.data_path(index))
             
         if load_checkpoint:
-            checkpoint = torch.load(self.checkpoint_path(index))
+            checkpoint = torch.load(self.checkpoint_path(index),
+                                    map_location=DEVICE)
 
             existing_keys = set(checkpoint.keys())
             requested_keys = set(self.serializables.keys())
 
             missing = requested_keys - existing_keys
             if missing:
-                self.log('WARNING: the following serializable keys were requested but do not exist in the checkpoint:', list(missing))
+                if self.verbose:
+                    self.log('WARNING: the following serializable keys were requested but do not exist in the checkpoint:', list(missing))
                 if raise_on_missing:
                     raise RuntimeError('raise_on_missing triggered')
 
             extra = existing_keys - requested_keys
             if extra:
-                self.log('WARNING: the following serialiables exist in the checkpoint but were not requested:', list(extra))
+                if self.verbose:
+                    self.log('WARNING: the following serialiables exist in the checkpoint but were not requested:', list(extra))
                 if raise_on_extra:
                     raise RuntimeError('raise_on_extra triggered')
 
@@ -84,23 +92,27 @@ class Experiment:
                 if key in existing_keys:
                     self.serializables[key].load_state_dict(checkpoint[key])
 
-        self.log('Load successful!')
-
-    # Note: this assumes checkpoints are indexed by integers
-    def load_latest(self, **kwargs):
+        if self.verbose:
+            self.log('Load successful!')
+            
+    def list_checkpoints(self):
         checkpoint_indices = []
         for path in glob.glob(self.checkpoint_path('*')):
             filename = os.path.basename(path)
             digits = filename.lstrip('checkpoint_').rstrip('.pt')
             checkpoint_indices.append(int(digits))
+        return sorted(checkpoint_indices)
 
+    # Note: this assumes checkpoints are indexed by integers
+    def load_latest(self, **kwargs):
+        checkpoint_indices = self.list_checkpoints()
         if len(checkpoint_indices) == 0:
-            self.log('No available checkpoints')
+            if self.verbose:
+                self.log('No available checkpoints')
             return False
-
-        sorted_indices = sorted(checkpoint_indices)
-        self.log('Available checkpoint indices: {}', sorted_indices)
-        latest_index = sorted_indices[-1]
+        if self.verbose:
+            self.log('Available checkpoint indices: {}', checkpoint_indices)
+        latest_index = checkpoint_indices[-1]
         self.load(latest_index, **kwargs)
         return True
 
