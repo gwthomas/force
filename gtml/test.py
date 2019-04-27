@@ -7,9 +7,9 @@ from gtml.constants import DEFAULT_BATCH_SIZE, DEFAULT_NUM_WORKERS, DEVICE
 def zero_one(y_hat, y):
     return y_hat == y
 
-def test(model, test_set, criterion=zero_one, batch_size=DEFAULT_BATCH_SIZE,
+def test(model, dataset, criterion=zero_one, batch_size=DEFAULT_BATCH_SIZE,
          num_workers=DEFAULT_NUM_WORKERS):
-    data_loader = DataLoader(test_set, batch_size=batch_size)
+    data_loader = DataLoader(dataset, batch_size=batch_size)
     model.eval()
     with torch.no_grad():
         batch_results = []

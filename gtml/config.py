@@ -13,13 +13,13 @@ class boolean:
             self.value = False
         else:
             raise ValueError('Cannot convert {} to boolean'.format(self.s))
-    
+
     def __bool__(self):
         return self.value
-    
+
     def __repr__(self):
         return '<boolean value={}>'.format(self.value)
-        
+
 
 class Configuration:
     def __init__(self, entries):
@@ -37,7 +37,7 @@ class Configuration:
                 type_arg = possibilities
             else:
                 type_arg = None
-                
+
             if default is REQUIRED:
                 name_arg = name
                 default_arg = None
@@ -52,18 +52,19 @@ class Configuration:
             value = getattr(args, name)
             if type(possibilities) not in (list, tuple):
                 possibilities = [possibilities]
-            
+
             match = False
             for possibility in possibilities:
                 if isinstance(possibility, type):
                     if isinstance(value, possibility):
                         match = True
                         break
-                    
+
                     # Not already the right type, but try casting it
                     try:
                         value = possibility(value)
                         match = True
+                        setattr(args, name, value)
                         break
                     except:
                         pass

@@ -34,12 +34,13 @@ class Minimizer(CallbackManager, Serializable):
 
 
 class EpochalMinimizer(Minimizer):
-    def __init__(self, compute_loss, optimizer, dataset,
-                 batch_size=DEFAULT_BATCH_SIZE,
-                 num_workers=DEFAULT_NUM_WORKERS):
+    def __init__(self, compute_loss, optimizer, data_loader=None):
         Minimizer.__init__(self, compute_loss, optimizer)
-        self.batch_size = batch_size
         self.epochs_taken = 0
+        self.data_loader = data_loader
+
+    def create_data_loader(self, dataset, batch_size=DEFAULT_BATCH_SIZE,
+                           num_workers=DEFAULT_NUM_WORKERS):
         self.data_loader = DataLoader(dataset, batch_size=batch_size,
                                       shuffle=True, pin_memory=True,
                                       num_workers=num_workers)
@@ -48,6 +49,9 @@ class EpochalMinimizer(Minimizer):
         return Minimizer._state_attrs(self) + ['epochs_taken']
 
     def run(self, max_epochs):
+        if self.data_loader is None:
+            raise RuntimeError('EpochalMinimizer has no data loader')
+
         while self.epochs_taken < max_epochs:
             self.run_callbacks('pre_epoch', self.epochs_taken)
             for batch in self.data_loader:
