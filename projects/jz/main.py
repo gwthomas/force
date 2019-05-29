@@ -11,7 +11,7 @@ from torch.utils.data import Subset
 
 from gtml.callbacks import *
 import gtml.datasets as datasets
-from gtml.config import Configuration, boolean, REQUIRED
+from gtml.config import *
 from gtml.constants import DEVICE
 from gtml.experiment import Experiment
 import gtml.models.resnet as resnet
@@ -22,57 +22,79 @@ import gtml.util as util
 
 
 class PartitioningMinimizer(EpochalMinimizer):
-    def __init__(self, compute_loss, optimizer, dataset, batch_size):
+    def __init__(self, compute_loss, optimizer, dataset, p, randomize, batch_size):
         EpochalMinimizer.__init__(self, compute_loss, optimizer)
         self.dataset = dataset
+        self.p = p
+        self.randomize = randomize
         self.batch_size = batch_size
         self.current_index = -1
         self.partitions = [None, None]
 
-    def _state_attrs(self):
-        return EpochalMinimizer._state_attrs(self) + ['current_index']
-
     def current_partition(self):
         return self.partitions[self.current_index]
 
-    def partition(self, p, randomize):
+    def compute_partitions(self):
         n = len(self.dataset)
-        all_indices = torch.randperm(n) if randomize else torch.arange(n)
-        n_p1 = int(p * n)
+        all_indices = torch.randperm(n) if self.randomize else torch.arange(n)
+        n_p1 = int(self.p * n)
         self.partitions[0] = Subset(self.dataset, all_indices[:n_p1])
         self.partitions[1] = Subset(self.dataset, all_indices[n_p1:])
+        self.run_callbacks('computed_partitions')
 
     def use_partition(self, index):
         assert index in (0, 1)
         if index == self.current_index:
             return
 
+        if self.randomize and index == 0:
+            self.compute_partitions()
+            
         self.create_data_loader(self.partitions[index], batch_size=self.batch_size)
         self.current_index = index
-
-    def switch_partition(self):
-        self.use_partition(1 - self.current_index)
+        self.run_callbacks('swapped_partition', self.current_index)
 
 
-cfg_template = Configuration([
-    ('exp_name', str, REQUIRED),
-    ('dataset', ('cifar10', 'mnist', 'svhn'), REQUIRED),
-    ('algorithm', ('sgd', 'adam', 'adamw'), REQUIRED),
-    ('init_lr', (float, None), None),
-    ('use_lr_schedule', boolean, True),
-    ('weight_decay', float, 1e-4),
-    ('momentum', float, 0.9),
-    ('n_epochs', int, 200),
-    ('batch_size', int, 128),
-    ('load_exp', (str, None), None),
-    ('load_index', (int, None), None),
-    ('switch_period', (int, None), None),
-    ('p', float, 0.5),
-    ('randomize_partitions', boolean, False),
-    ('seed', int, 0),
-    ('debug_optimization_path_period', (int, None), None)
+cfg_template = Config([
+    RequiredItem('exp_name', str),
+    RequiredItem('dataset', ('cifar10', 'mnist', 'svhn')),
+    RequiredItem('algorithm', ('sgd', 'adam', 'adamw')),
+    OptionalItem('init_lr', float),
+    OptionalItem('drop_epoch', int),
+    DefaultingItem('reset_optimizer', boolean, False),
+    DefaultingItem('weight_decay', float, 1e-4),
+    DefaultingItem('momentum', float, 0.9),
+    DefaultingItem('n_epochs', int, 200),
+    DefaultingItem('batch_size', int, 128),
+    OptionalItem('load_exp', str),
+    OptionalItem('load_index', int),
+    DefaultingItem('eval_train', boolean, True),
+    OptionalItem('p', float),
+    OptionalItem('stage', ('1','2')),
+    OptionalItem('swap_period', int),
+    DefaultingItem('reset_on_swap', boolean, False),
+    DefaultingItem('randomize_partitions', boolean, False),
+    DefaultingItem('seed', int, 0),
+    OptionalItem('debug_optimization_path_period', int)
 ])
 
+
+def get_optimizer(cfg, parameters):
+    if cfg.algorithm == 'sgd':
+        init_lr = 0.1 if cfg.init_lr is None else cfg.init_lr
+        return SGD(parameters, lr=init_lr, momentum=cfg.momentum,
+                   weight_decay=cfg.weight_decay)
+    elif cfg.algorithm == 'adam':
+        init_lr = 1e-3 if cfg.init_lr is None else cfg.init_lr
+        return Adam(parameters, lr=init_lr,
+                    weight_decay=cfg.weight_decay)
+    elif cfg.algorithm == 'adamw':
+        init_lr = 1e-3 if cfg.init_lr is None else cfg.init_lr
+        return AdamW(parameters, lr=init_lr,
+                     weight_decay=cfg.weight_decay)
+    else:
+        raise NotImplementedError(cfg.algorithm)
+        
 
 def main(cfg):
     util.set_random_seed(cfg.seed)
@@ -96,49 +118,39 @@ def main(cfg):
     parameters = list(model.parameters())
     criterion = torch.nn.CrossEntropyLoss()
     L = lambda x, y: criterion(model(x), y)
+    optimizer = get_optimizer(cfg, parameters)
 
-    if cfg.algorithm == 'sgd':
-        init_lr = 0.1 if cfg.init_lr is None else float(cfg.init_lr)
-        optimizer = SGD(parameters, lr=init_lr, momentum=cfg.momentum,
-                        weight_decay=cfg.weight_decay)
-    elif cfg.algorithm == 'adam':
-        init_lr = 1e-3 if cfg.init_lr is None else float(cfg.init_lr)
-        optimizer = Adam(parameters, lr=init_lr,
-                         weight_decay=cfg.weight_decay)
-    elif cfg.algorithm == 'adamw':
-        init_lr = 1e-3 if cfg.init_lr is None else float(cfg.init_lr)
-        optimizer = AdamW(parameters, lr=init_lr,
-                          weight_decay=cfg.weight_decay)
+    if cfg.p is None:
+        train = EpochalMinimizer(L, optimizer)
+        train.create_data_loader(train_set, batch_size=cfg.batch_size)
     else:
-        raise NotImplementedError(cfg.algorithm)
-
-    train = PartitioningMinimizer(L, optimizer, train_set, cfg.batch_size)
-    if cfg.switch_period is None:
-        train.partition(1, False)
-    else:
-        train.partition(cfg.p, cfg.randomize_partitions)
-    train.use_partition(0)
-
+        p = cfg.p
+        train = PartitioningMinimizer(L, optimizer, train_set, p, cfg.randomize_partitions, cfg.batch_size)
+        train.compute_partitions()
+        if cfg.stage is None:
+            train.use_partition(0)
+        else:
+            train.use_partition(int(cfg.stage) - 1)
+    
     serializables = {
         'model': model,
-        'optimizer': optimizer,
         'train': train
     }
 
-    if cfg.use_lr_schedule:
-        lr_scheduler = MultiStepLR(optimizer, milestones=[100,150], gamma=0.1)
+    if cfg.drop_epoch is not None:
+        lr_scheduler = MultiStepLR(optimizer, milestones=[cfg.drop_epoch], gamma=0.1)
         serializables['lr_scheduler'] = lr_scheduler
     else:
         lr_scheduler = None
+        
+    if not cfg.reset_optimizer:
+        serializables['optimizer'] = optimizer
 
     # Setup logging/data collection
     exp = Experiment(cfg.exp_name, serializables=serializables)
 
     load_exp = exp if cfg.load_exp is None else \
-               Experiment(cfg.load_exp, serializables={
-                    'model': model,
-                    'train': train
-               })
+               Experiment(cfg.load_exp, serializables=serializables)
 
     if cfg.load_index is None:
         load_exp.load_latest()
@@ -150,11 +162,15 @@ def main(cfg):
 
     def evaluate(train_acc_key, test_acc_key):
         exp.log('Evaluating...')
-        train_acc = test(model, train_set)
         test_acc = test(model, test_set)
-        exp.log('Accuracy: train = {}, test = {}', train_acc, test_acc)
-        exp.data.append(train_acc_key, train_acc)
         exp.data.append(test_acc_key, test_acc)
+        if cfg.eval_train:
+            train_acc = test(model, train_set)
+            exp.data.append(train_acc_key, train_acc)
+            exp.log('Accuracy: train = {}, test = {}', train_acc, test_acc)
+        else:
+            exp.log('Accuracy: test = {}', test_acc)
+        
 
     if cfg.debug_optimization_path_period is not None:
         evaluate('debug_train_accuracy', 'debug_test_accuracy')
@@ -169,10 +185,11 @@ def main(cfg):
             exp.save(index=steps_taken)
 
     def pre_epoch_callback(epochs_taken):
-        if cfg.switch_period is not None and epochs_taken > 0 and \
-                epochs_taken % cfg.switch_period == 0:
-            train.switch_partition()
-            exp.log('Switched to partition {}', train.current_index)
+        if cfg.swap_period is not None:
+            period = cfg.swap_period
+            partition_index = (epochs_taken // period) % 2
+            exp.log('Epochs taken = {}; partition index = {}', epochs_taken, partition_index)
+            train.use_partition(partition_index)
 
         if lr_scheduler is not None:
             lr_scheduler.step(epoch=epochs_taken)
@@ -181,10 +198,18 @@ def main(cfg):
         exp.log('{} epochs completed.', epochs_taken)
         evaluate('train_accuracy', 'test_accuracy')
         exp.save(index=epochs_taken)
+        
+    def on_swap(index):
+        exp.log('Swapped to partition {}', index)
+        if cfg.reset_on_swap:
+            exp.log('Resetting optimizer')
+            train.optimizer = get_optimizer(cfg, parameters)
 
     train.add_callback('post_step', post_step_callback)
     train.add_callback('pre_epoch', pre_epoch_callback)
     train.add_callback('post_epoch', post_epoch_callback)
+    train.add_callback('computed_partitions', lambda: exp.log('Computed partitions'))
+    train.add_callback('swapped_partition', on_swap)
     train.run(cfg.n_epochs)
 
 

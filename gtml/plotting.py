@@ -10,8 +10,11 @@ class Plot:
         self.title = title
         self.curves = OrderedDict()
 
-    def add(self, name, data):
-        self.curves[name] = data
+    def add(self, name, y, x=None):
+        self.curves[name] = {
+            'y': y,
+            'x': x
+        }
 
     def plot(self, figsize=None, ylim=None, show=True, save_path=None):
         plt.figure(figsize=figsize)
@@ -25,9 +28,9 @@ class Plot:
         names = list(self.curves.keys())
         for name in names:
             data = self.curves[name]
-            if callable(data):
-                data = data()
-            plt.plot(data)
+            y = data['y']
+            x = data['x'] if data['x'] is not None else range(len(y))
+            plt.plot(x, y)
         if len(names) > 1:
             plt.legend(names)
 

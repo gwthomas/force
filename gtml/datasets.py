@@ -7,11 +7,12 @@ from gtml.constants import DATASETS_DIR
 MNIST_MEAN = (0.1307,)
 MNIST_STD = (0.3081,)
 
-def load_mnist():
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(MNIST_MEAN, MNIST_STD)
-    ])
+def load_mnist(normalize=True, other_transforms=[]):
+    transform_list = [transforms.ToTensor()]
+    if normalize:
+        transform_list.append(transforms.Normalize(MNIST_MEAN, MNIST_STD))
+    transform_list.extend(other_transforms)
+    transform = transforms.Compose(transform_list)
     return (datasets.MNIST(DATASETS_DIR, train=True, transform=transform, download=True),
             datasets.MNIST(DATASETS_DIR, train=False, transform=transform, download=True))
 

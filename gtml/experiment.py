@@ -59,11 +59,20 @@ class Experiment:
 
     def register_serializable(self, name, serializable):
         self.serializables[name] = serializable
+        
+    def list_checkpoints(self):
+        checkpoint_indices = []
+        for path in glob.glob(self.checkpoint_path('*')):
+            filename = os.path.basename(path)
+            digits = filename.lstrip('checkpoint_').rstrip('.pt')
+            checkpoint_indices.append(int(digits))
+        return sorted(checkpoint_indices)
 
     def load(self, index, load_data=True, load_checkpoint=True,
              raise_on_missing=True, raise_on_extra=False):
         if self.verbose:
             self.log('Attempting to load from checkpoint {}', index)
+            
         if load_data:
             self.data = torch.load(self.data_path(index))
             
@@ -84,24 +93,16 @@ class Experiment:
             extra = existing_keys - requested_keys
             if extra:
                 if self.verbose:
-                    self.log('WARNING: the following serialiables exist in the checkpoint but were not requested:', list(extra))
+                    self.log('WARNING: the following serializables exist in the checkpoint but were not requested:', list(extra))
                 if raise_on_extra:
                     raise RuntimeError('raise_on_extra triggered')
 
             for key in requested_keys:
                 if key in existing_keys:
                     self.serializables[key].load_state_dict(checkpoint[key])
-
+                    
         if self.verbose:
             self.log('Load successful!')
-            
-    def list_checkpoints(self):
-        checkpoint_indices = []
-        for path in glob.glob(self.checkpoint_path('*')):
-            filename = os.path.basename(path)
-            digits = filename.lstrip('checkpoint_').rstrip('.pt')
-            checkpoint_indices.append(int(digits))
-        return sorted(checkpoint_indices)
 
     # Note: this assumes checkpoints are indexed by integers
     def load_latest(self, **kwargs):
@@ -115,6 +116,15 @@ class Experiment:
         latest_index = checkpoint_indices[-1]
         self.load(latest_index, **kwargs)
         return True
+    
+    def load_other(self, name, index=None, **kwargs):
+        load_exp = Experiment(name, serializables=self.serializables,
+                              ensure_exists=True)
+        if index is None:
+            load_exp.load_latest(**kwargs)
+        else:
+            load_exp.load(index=index, **kwargs)
+        self.data = load_exp.data
 
     def save(self, index):
         checkpoint = {name: obj.state_dict() for name, obj in self.serializables.items()}
