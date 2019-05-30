@@ -17,6 +17,13 @@ def load_mnist(normalize=True, other_transforms=[]):
             datasets.MNIST(DATASETS_DIR, train=False, transform=transform, download=True))
 
 
+def load_emnist(split='bymerge', other_transforms=[]):
+    transform_list = [transforms.ToTensor()]
+    transform_list.extend(other_transforms)
+    transform = transforms.Compose(transform_list)
+    return (datasets.EMNIST(DATASETS_DIR, split, train=True, transform=transform, download=True),
+            datasets.EMNIST(DATASETS_DIR, split, train=False, transform=transform, download=True))
+
 
 CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
 CIFAR10_STD = (0.2470, 0.2435, 0.2616)
