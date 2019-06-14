@@ -16,6 +16,13 @@ def load_mnist(normalize=True, other_transforms=[]):
     return (datasets.MNIST(DATASETS_DIR, train=True, transform=transform, download=True),
             datasets.MNIST(DATASETS_DIR, train=False, transform=transform, download=True))
 
+def load_fashion_mnist(other_transforms=[]):
+    transform_list = [transforms.ToTensor()]
+    transform_list.extend(other_transforms)
+    transform = transforms.Compose(transform_list)
+    return (datasets.FashionMNIST(DATASETS_DIR, train=True, transform=transform, download=True),
+            datasets.FashionMNIST(DATASETS_DIR, train=False, transform=transform, download=True))
+
 
 def load_emnist(split='bymerge', other_transforms=[]):
     transform_list = [transforms.ToTensor()]

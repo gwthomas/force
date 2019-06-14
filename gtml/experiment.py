@@ -27,16 +27,15 @@ class Experiment:
             if self.verbose:
                 print('Found existing experiment at {}'.format(self.dir))
             if ensure_new:
-                print('ensure_new is True; exiting')
-                exit(1)
+                raise RuntimeError('ensure_new is True, but existing experiment found at {}'.format(self.dir))
 
             self.log_file = open(self.log_path, 'a')
         else:
             if self.verbose:
                 print('No experiment exists at {}'.format(self.dir))
             if ensure_exists:
-                print('ensure_exists is True; exiting')
-                exit(1)
+                raise RuntimeError('ensure_exists is True, but no experiment found at {}'.format(self.dir))
+
 
             print('Creating experiment')
             os.makedirs(self.dir, exist_ok=True)
