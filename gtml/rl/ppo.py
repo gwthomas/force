@@ -70,7 +70,7 @@ class ProximalPolicyOptimization(Minimizer):
             self.run_callbacks('post-iteration')
 
     def run_parallel(self, envname, n_iterations=1):
-        import multiprocessing as mp
+        import torch.multiprocessing as mp
         data_q = mp.Queue()
         workers = []
         for _ in range(self.N):

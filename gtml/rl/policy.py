@@ -1,4 +1,5 @@
-import torch; nn = torch.nn
+import torch
+import torch.nn as nn
 
 
 class Policy:

@@ -1,8 +1,7 @@
 import gym
-from scipy.misc import imresize
 import torch
 
-from gtml.util import Memory
+from gtml.rl.memory import Memory
 from gtml.constants import DEFAULT_DISCOUNT
 
 
@@ -56,10 +55,14 @@ class Environment:
 
 # Implements preprocessing method described in the paper by Mnih, et al.
 class AtariEnvironment(Environment):
-    def __init__(self, name, discount=DISCOUNT, should_render=False, m=4, size=(84,84)):
+    def __init__(self, name, discount=DEFAULT_DISCOUNT, should_render=False, m=4, size=(84,84)):
         Environment.__init__(self, name, discount=discount, should_render=should_render, history=m)
         self.m = m
         self.size = size
+
+    def luminance(self, img):
+        r, g, b = img[:,:,0], img[:,:,1], img[:,:,2]
+        return 0.2126*r + 0.7152*g + 0.0722*b
 
     def preprocess(self, raw_observation):
         recent_raw = self.raw_obs_history.recent(self.m)
@@ -73,12 +76,13 @@ class AtariEnvironment(Environment):
         recent_frames = []
         for i in range(self.m):
             maxed = torch.max(recent_raw[-(i+1)], recent_raw[-(i+2)])
-            luma = luminance(maxed)
+            luma = self.luminance(maxed)
             resized = torch.Tensor(imresize(luma, self.size))
             recent_frames.append(resized)
 
         # Stack and normalize pixel values
         return torch.stack(recent_frames) / 255.0
+
 
 ATARI_NAMES = [
         'Alien', 'Amidar', 'Assault', 'Asterix', 'Asteroids',
@@ -93,6 +97,7 @@ ATARI_NAMES = [
         'Venture', 'VideoPinball', 'WizardOfWor', 'Zaxxon'
 ]
 
-def luminance(img):
-    r, g, b = img[:,:,0], img[:,:,1], img[:,:,2]
-    return 0.2126*r + 0.7152*g + 0.0722*b
+def get_env(name, discount=DEFAULT_DISCOUNT):
+    basename = name.split('-')[0]
+    env_class = AtariEnvironment if basename in ATARI_NAMES else Environment
+    return env_class(name, discount=discount)
