@@ -1,5 +1,8 @@
 *.DS_Store
+*.json
+*.pkl
+*.pt
 *.pyc
-__pycache__
-*/__pycache__
-*.ipynb
+*.txt
+**/__pycache__
+**/variants

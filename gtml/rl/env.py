@@ -1,25 +1,17 @@
 import gym
+import numpy as np
 import torch
 
 from gtml.rl.memory import Memory
 from gtml.constants import DEFAULT_DISCOUNT
 
 
-def integral_dimensionality(space):
-    if isinstance(space, gym.spaces.Discrete):
-        return space.n
-    elif isinstance(space, gym.spaces.Box):
-        return int(torch.prod(torch.Tensor(space.shape)))
-
-
 class Environment:
-    def __init__(self, name, discount=DEFAULT_DISCOUNT, should_render=False,
-                 history=1):
+    def __init__(self, name, discount=DEFAULT_DISCOUNT, should_render=False):
         self.name = name
         self.discount = discount
         self.should_render = should_render
         self.gym_env = gym.make(name)
-        self.raw_obs_history = Memory(history)
 
     @property
     def observation_space(self):
@@ -33,6 +25,30 @@ class Environment:
     def discrete_actions(self):
         return isinstance(self.action_space, gym.spaces.Discrete)
 
+    def seed(self, s):
+        self.gym_env.seed(s)
+
+    def reset(self):
+        return torch.from_numpy(self.gym_env.reset()).float()
+
+    def step(self, action):
+        observation, reward, done, info = self.gym_env.step(action)
+        observation = torch.from_numpy(observation).float()
+        return observation, reward, done, info
+
+    def maybe_render(self):
+        if self.should_render:
+            self.gym_env.render()
+
+
+# Implements preprocessing method described in the paper by Mnih, et al.
+class AtariEnvironment(Environment):
+    def __init__(self, name, discount=DEFAULT_DISCOUNT, should_render=False, m=4, size=(84,84)):
+        Environment.__init__(self, name, discount=discount, should_render=should_render)
+        self.m = m
+        self.size = size
+        self.raw_obs_history = Memory(history)
+
     def reset(self):
         self.raw_obs_history.clear()
         raw_observation = torch.from_numpy(self.gym_env.reset()).float()
@@ -44,21 +60,6 @@ class Environment:
         raw_observation = torch.from_numpy(raw_observation).float()
         self.raw_obs_history.add(raw_observation)
         return self.preprocess(raw_observation), reward, done, info
-
-    def maybe_render(self):
-        if self.should_render:
-            self.gym_env.render()
-
-    def preprocess(self, raw_observation):
-        return raw_observation
-
-
-# Implements preprocessing method described in the paper by Mnih, et al.
-class AtariEnvironment(Environment):
-    def __init__(self, name, discount=DEFAULT_DISCOUNT, should_render=False, m=4, size=(84,84)):
-        Environment.__init__(self, name, discount=discount, should_render=should_render, history=m)
-        self.m = m
-        self.size = size
 
     def luminance(self, img):
         r, g, b = img[:,:,0], img[:,:,1], img[:,:,2]
@@ -97,7 +98,14 @@ ATARI_NAMES = [
         'Venture', 'VideoPinball', 'WizardOfWor', 'Zaxxon'
 ]
 
-def get_env(name, discount=DEFAULT_DISCOUNT):
+def get_env(name, discount=DEFAULT_DISCOUNT, should_render=False):
     basename = name.split('-')[0]
     env_class = AtariEnvironment if basename in ATARI_NAMES else Environment
-    return env_class(name, discount=discount)
+    return env_class(name, discount=discount, should_render=should_render)
+
+
+def integral_dimensionality(space):
+    if isinstance(space, gym.spaces.Discrete):
+        return space.n
+    elif isinstance(space, gym.spaces.Box):
+        return np.prod(space.shape)

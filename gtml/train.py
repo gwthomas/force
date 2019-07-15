@@ -2,24 +2,24 @@ import torch
 from torch.utils.data import DataLoader
 
 from gtml.callbacks import CallbackManager
-from gtml.constants import DEFAULT_BATCH_SIZE, DEFAULT_NUM_WORKERS, DEVICE
-from gtml.core import Serializable
+from gtml.constants import DEFAULT_BATCH_SIZE, DEFAULT_NUM_WORKERS, DEVICE, INF
+from gtml.serialization import Serializable
 import gtml.util as util
 
 
 class LossFunction:
     def __init__(self):
         self.terms = {}
-        
+
     def add_term(self, name, compute_fn):
         self.terms[name] = compute_fn
-        
-    def add_supervised_term(self, name, model, criterion):
-        def supervised_loss(inputs):
-            x, y = inputs['x'], inputs['y']
+
+    def add_supervised_term(self, model, criterion, name='supervised_loss'):
+        def supervised_loss(batch):
+            x, y = batch
             return criterion(model(x), y)
         self.add_term(name, supervised_loss)
-        
+
     def __call__(self, inputs):
         total = 0
         terms = {}
@@ -47,14 +47,15 @@ class Minimizer(CallbackManager, Serializable):
         return ['steps_taken']
 
     def step(self, inputs):
+        inputs = util.transfer_recursive(inputs)
         self.run_callbacks('pre_step', self.steps_taken)
         self.optimizer.zero_grad()
         loss, terms = self.loss_fn(inputs)
         loss.backward()
         self.optimizer.step()
         self.steps_taken += 1
-        loss_val = util.scalar(loss)
-        term_vals = {name: util.scalar(term) for name, term in terms.items()}
+        loss_val = float(loss)
+        term_vals = {name: float(term) for name, term in terms.items()}
         self.run_callbacks('post_step', self.steps_taken, loss_val, term_vals)
 
 
@@ -73,13 +74,15 @@ class EpochalMinimizer(Minimizer):
     def _state_attrs(self):
         return Minimizer._state_attrs(self) + ['epochs_taken']
 
-    def run(self, max_epochs):
+    def run(self, n_epochs, max_epochs=INF):
         if self.data_loader is None:
             raise RuntimeError('EpochalMinimizer has no data loader')
 
-        while self.epochs_taken < max_epochs:
+        for _ in range(n_epochs):
+            if self.epochs_taken >= max_epochs:
+                return
             self.run_callbacks('pre_epoch', self.epochs_taken)
-            for x, y in self.data_loader:
-                self.step({'x': x.to(DEVICE), 'y': y.to(DEVICE)})
+            for batch in self.data_loader:
+                self.step(batch)
             self.epochs_taken += 1
             self.run_callbacks('post_epoch', self.epochs_taken)

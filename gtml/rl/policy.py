@@ -47,14 +47,3 @@ class GaussianPolicy(StochasticPolicy):
         mean = self.mean(observations)
         var = self.var(observations)
         return torch.distributions.MultivariateNormal(mean, covariance_matrix=torch.diag(var))
-
-
-class ActorCritic(nn.Module):
-    def __init__(self, policy, value_fn):
-        nn.Module.__init__(self)
-        self.policy = policy
-        self.policy_fn = policy.net
-        self.value_fn = value_fn
-
-    def forward(self, x):
-        return self.policy_fn(x), self.value_fn(x)

@@ -1,64 +1,56 @@
-import glob
-import os
-import string
+from collections import defaultdict
+from pathlib import Path
+import shutil
+import sys
 
 import torch
 
-from gtml.constants import EXPERIMENTS_DIR, DEVICE
-
-
-class Data(dict):
-    def append(self, key, value):
-        if key not in self:
-            self[key] = []
-        self[key].append(value)
+from gtml.constants import DEVICE
+import gtml.util as util
 
 
 class Experiment:
-    def __init__(self, name, exp_dir=EXPERIMENTS_DIR, serializables=None,
-                 ensure_new=False, ensure_exists=False, verbose=True):
-        self.name = name
-        self.serializables = {} if serializables is None else serializables
-        self.data = Data()
-        self.dir = os.path.join(exp_dir, name)
-        self.verbose = verbose
+    def __init__(self, base_dir, variant, seed):
+        self.base_dir = Path(base_dir)
+        self.variant = variant
+        self.variant_dir = self.base_dir / 'variants' / self.variant
+        self.seed = seed
+        self.instance_dir = self.variant_dir / 'seed{}'.format(self.seed)
+        self.log_file = None # call instantiate to create this
+        self.serializables = {}
+        self.data = defaultdict(list)
 
-        if os.path.isfile(self.log_path): # Check for existing data
-            if self.verbose:
-                print('Found existing experiment at {}'.format(self.dir))
-            if ensure_new:
-                raise RuntimeError('ensure_new is True, but existing experiment found at {}'.format(self.dir))
+        if not self.base_dir.is_dir():
+            raise ValueError('No experiment family at {}'.format(self.base_dir))
 
-            self.log_file = open(self.log_path, 'a')
-        else:
-            if self.verbose:
-                print('No experiment exists at {}'.format(self.dir))
-            if ensure_exists:
-                raise RuntimeError('ensure_exists is True, but no experiment found at {}'.format(self.dir))
+        if not self.variant_dir.is_dir():
+            raise ValueError('Variant {} does not exist. Expected path: {}'.format(self.variant, self.variant_dir))
 
+    def instantiate(self, erase_if_exists):
+        if self.instance_dir.is_dir():
+            if erase_if_exists:
+                print('Erasing existing experiment')
+                shutil.rmtree(self.instance_dir)
+            else:
+                raise RuntimeError('Existing experiment found; not erasing')
 
-            print('Creating experiment')
-            os.makedirs(self.dir, exist_ok=True)
-            self.log_file = open(self.log_path, 'w')
-
-    @property
-    def log_path(self):
-        return os.path.join(self.dir, 'log.txt')
+        self.instance_dir.mkdir()
+        self.log_file = open(self.instance_dir / 'log.txt', 'w', buffering=1)
 
     def data_path(self, index):
-        return os.path.join(self.dir, 'data_{}.pt'.format(index))
+        return self.instance_dir / 'data_{}.pt'.format(index)
 
     def checkpoint_path(self, index):
-        return os.path.join(self.dir, 'checkpoint_{}.pt'.format(index))
+        return self.instance_dir / 'checkpoint_{}.pt'.format(index)
 
     def log(self, format_string, *args):
         output = format_string.format(*args)
         print(output)
         self.log_file.write(output + '\n')
 
-    def register_serializable(self, name, serializable):
-        self.serializables[name] = serializable
-        
+    def register_serializables(self, serializables):
+        self.serializables.update(serializables)
+
     def list_checkpoints(self):
         checkpoint_indices = []
         for path in glob.glob(self.checkpoint_path('*')):
@@ -69,12 +61,9 @@ class Experiment:
 
     def load(self, index, load_data=True, load_checkpoint=True,
              raise_on_missing=True, raise_on_extra=False):
-        if self.verbose:
-            self.log('Attempting to load from checkpoint {}', index)
-            
         if load_data:
             self.data = torch.load(self.data_path(index))
-            
+
         if load_checkpoint:
             checkpoint = torch.load(self.checkpoint_path(index),
                                     map_location=DEVICE)
@@ -99,26 +88,19 @@ class Experiment:
             for key in requested_keys:
                 if key in existing_keys:
                     self.serializables[key].load_state_dict(checkpoint[key])
-                    
-        if self.verbose:
-            self.log('Load successful!')
 
     # Note: this assumes checkpoints are indexed by integers
     def load_latest(self, **kwargs):
         checkpoint_indices = self.list_checkpoints()
         if len(checkpoint_indices) == 0:
-            if self.verbose:
-                self.log('No available checkpoints')
-            return False
-        if self.verbose:
-            self.log('Available checkpoint indices: {}', checkpoint_indices)
+            raise RuntimeError('No available checkpoints')
         latest_index = checkpoint_indices[-1]
         self.load(latest_index, **kwargs)
         return True
-    
+
     def load_other(self, name, index=None, **kwargs):
-        load_exp = Experiment(name, serializables=self.serializables,
-                              ensure_exists=True)
+        load_exp = Experiment(name, ensure_exists=True)
+        load_exp.register_serializables(self.serializables)
         if index is None:
             load_exp.load_latest(**kwargs)
         else:
@@ -131,3 +113,32 @@ class Experiment:
                              (checkpoint, self.checkpoint_path)]:
             path = path_fn(index)
             torch.save(obj, path)
+
+    def run(self):
+        if self.log_file is None:
+            raise RuntimeError('Must instantiate experiment before running')
+
+        sys.path.append(str(self.base_dir.resolve()))
+        try:
+            import main
+        except:
+            print('Failed to import main')
+            raise
+
+        cfg_path = self.variant_dir / 'config.json'
+        cfg = main.config_info.parse_json_file(cfg_path)
+        util.set_random_seed(self.seed)
+        main.main(self, cfg)
+
+
+if __name__ == '__main__':
+    from argparse import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_argument('base_dir', type=str)
+    parser.add_argument('variant', type=str)
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--erase_if_exists', action='store_false')
+    args = parser.parse_args()
+    exp = Experiment(args.base_dir, args.variant, args.seed)
+    exp.instantiate(args.erase_if_exists)
+    exp.run()

@@ -5,7 +5,7 @@ from gtml.constants import DEFAULT_GAE_LAMBDA
 
 # thx OpenAI (adapted)
 # computes target value using TD(lambda) estimator and advantage with GAE(lambda)
-def estimate_advantages_and_value_targets(rewards, done, values, gamma, lam=GAE_LAMBDA):
+def estimate_advantages_and_value_targets(rewards, done, values, gamma, lam=DEFAULT_GAE_LAMBDA):
     T = len(rewards)
     advantages = []
     lastgaelam = 0
