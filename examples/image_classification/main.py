@@ -21,16 +21,6 @@ config_info = Config([
     ConfigItem('eval_train', bool, True)
 ])
 
-def name_variant(v):
-    name = v['dataset']
-    if 'init_lr' in v:
-        name = name + '_lr{}'.format(v['init_lr'])
-    if 'drop_epoch' in v:
-        name = name + '_drop{}'.format(v['drop_epoch'])
-    return name
-
-variants = [{'dataset': 'cifar10', 'drop_epoch': 150}]
-
 
 def main(exp, cfg):
     if cfg['dataset'] == 'mnist':

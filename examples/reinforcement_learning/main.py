@@ -15,11 +15,6 @@ config_info = Config([
     ConfigItem('render', bool, False)
 ])
 
-def name_variant(v):
-    return '{}_T{}'.format(v['env'], v['T'])
-
-variants = [{'env': 'CartPole-v0', 'T': 20}]
-
 
 def actor_critic_for_env(env, hidden_dims=[100,100]):
     obs_dim = integral_dimensionality(env.observation_space)
@@ -44,3 +39,11 @@ def main(exp, cfg):
                                      T=cfg['T'])
     alg.add_callback('post-iteration', evaluate)
     alg.run(n_iterations=100000)
+
+
+variant_specs = {
+    'cartpole': {'env': 'CartPole-v0', 'T': 20}
+}
+
+def sbatch_args(spec):
+    return {'cpus-per-task': 1}

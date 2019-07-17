@@ -1,5 +1,7 @@
 from collections import defaultdict
+import json
 from pathlib import Path
+import subprocess
 import shutil
 import sys
 
@@ -9,39 +11,87 @@ from gtml.constants import DEVICE
 import gtml.util as util
 
 
-class Experiment:
-    def __init__(self, base_dir, variant, seed):
-        self.base_dir = Path(base_dir)
+class ExperimentFamily:
+    def __init__(self, path):
+        self.path = Path(path)
+        if not self.path.is_dir():
+            raise ValueError('No experiment family at {}'.format(self.path))
+        self._module = None
+
+    @property
+    def module(self):
+        if self._module is None:
+            sys.path.append(str(self.path.resolve()))
+            import main
+            self._module = main
+        return self._module
+
+
+class ExperimentVariant:
+    def __init__(self, family, name):
+        self.family = family
+        self.name = name
+        self.path = family.path / 'variants' / name
+
+    def setup(self):
+        if not self.path.is_dir():
+            self.path.mkdir(parents=True)
+        spec = self.family.module.variant_specs[self.name]
+        spec_text = json.dumps(spec, indent=4)
+        spec_path = self.path / 'spec.json'
+        spec_path.write_text(spec_text)
+
+    def get_config(self):
+        return self.family.config_info.parse_json_file(self.path / 'spec.json')
+
+
+class ExperimentInstance:
+    def __init__(self, variant, seed):
         self.variant = variant
-        self.variant_dir = self.base_dir / 'variants' / self.variant
         self.seed = seed
-        self.instance_dir = self.variant_dir / 'seed{}'.format(self.seed)
+        self.path = variant.path / 'seed{}'.format(seed)
         self.log_file = None # call instantiate to create this
         self.serializables = {}
         self.data = defaultdict(list)
 
-        if not self.base_dir.is_dir():
-            raise ValueError('No experiment family at {}'.format(self.base_dir))
-
-        if not self.variant_dir.is_dir():
-            raise ValueError('Variant {} does not exist. Expected path: {}'.format(self.variant, self.variant_dir))
+    @property
+    def family(self):
+        return self.variant.family
 
     def instantiate(self, erase_if_exists):
-        if self.instance_dir.is_dir():
+        if self.path.is_dir():
             if erase_if_exists:
                 print('Erasing existing experiment')
-                shutil.rmtree(self.instance_dir)
+                shutil.rmtree(self.path)
             else:
                 raise RuntimeError('Existing experiment found; not erasing')
 
-        self.instance_dir.mkdir()
-        self.log_file = open(self.instance_dir / 'log.txt', 'w', buffering=1)
+        self.path.mkdir()
+        self.log_file = open(self.path / 'log.txt', 'w', buffering=1)
+
+    def write_batch_script(self):
+        cmd = 'srun python {} {} {} --seed {}'.format(
+                Path(__file__).resolve(),
+                self.family.path.resolve(),
+                self.variant.name,
+                self.seed
+        )
+
+        module = self.family.module
+        spec = module.variant_specs[self.variant.name]
+        sbatch_args = module.sbatch_args(spec)
+        lines = ['#!/bin/bash']
+        for key, val in sbatch_args.items():
+            lines.append('#SBATCH --{}={}'.format(key, val))
+        lines.append(cmd)
+        batch_path = self.path / 'batch.sh'
+        batch_path.write_text('\n'.join(lines))
 
     def data_path(self, index):
-        return self.instance_dir / 'data_{}.pt'.format(index)
+        return self.path / 'data_{}.pt'.format(index)
 
     def checkpoint_path(self, index):
-        return self.instance_dir / 'checkpoint_{}.pt'.format(index)
+        return self.path / 'checkpoint_{}.pt'.format(index)
 
     def log(self, format_string, *args):
         output = format_string.format(*args)
@@ -115,20 +165,31 @@ class Experiment:
             torch.save(obj, path)
 
     def run(self):
-        if self.log_file is None:
-            raise RuntimeError('Must instantiate experiment before running')
-
-        sys.path.append(str(self.base_dir.resolve()))
-        try:
-            import main
-        except:
-            print('Failed to import main')
-            raise
-
-        cfg_path = self.variant_dir / 'config.json'
-        cfg = main.config_info.parse_json_file(cfg_path)
+        cfg = self.variant.get_config()
         util.set_random_seed(self.seed)
-        main.main(self, cfg)
+        self.family.module.main(self, cfg)
+
+
+def launch(args):
+    family = ExperimentFamily(args.base_dir)
+    if args.variant not in family.module.variant_specs:
+        print('Requested variant', args.variant, 'not found! Existing variants:')
+        for existing_variant_name in sorted(family.module.variant_specs.keys()):
+            print('\t', existing_variant_name)
+        exit()
+
+    variant = ExperimentVariant(family, args.variant)
+    variant.setup()
+    instance = ExperimentInstance(variant, args.seed)
+    instance.instantiate(not args.careful)
+
+    if args.batch:
+        print('Writing batch script')
+        instance.write_batch_script()
+        print('Submitting')
+        #completed = subprocess.run([''])
+    else:
+        instance.run()
 
 
 if __name__ == '__main__':
@@ -137,8 +198,6 @@ if __name__ == '__main__':
     parser.add_argument('base_dir', type=str)
     parser.add_argument('variant', type=str)
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--erase_if_exists', action='store_false')
-    args = parser.parse_args()
-    exp = Experiment(args.base_dir, args.variant, args.seed)
-    exp.instantiate(args.erase_if_exists)
-    exp.run()
+    parser.add_argument('--batch', action='store_true')
+    parser.add_argument('--careful', action='store_true')
+    launch(parser.parse_args())
