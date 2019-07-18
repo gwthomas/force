@@ -46,4 +46,9 @@ variant_specs = {
 }
 
 def sbatch_args(spec):
-    return {'cpus-per-task': 1}
+    return {
+        'ntasks': 1,
+        'cpus-per-task': 1,
+        'time': '1-0',
+        'mem-per-cpu': '4G'
+    }

@@ -42,7 +42,7 @@ class ExperimentVariant:
         spec_path.write_text(spec_text)
 
     def get_config(self):
-        return self.family.config_info.parse_json_file(self.path / 'spec.json')
+        return self.family.module.config_info.parse_json_file(self.path / 'spec.json')
 
 
 class ExperimentInstance:
@@ -69,7 +69,7 @@ class ExperimentInstance:
         self.path.mkdir()
         self.log_file = open(self.path / 'log.txt', 'w', buffering=1)
 
-    def write_batch_script(self):
+    def write_batch_script(self, additional_args={}):
         cmd = 'srun python {} {} {} --seed {}'.format(
                 Path(__file__).resolve(),
                 self.family.path.resolve(),
@@ -80,12 +80,14 @@ class ExperimentInstance:
         module = self.family.module
         spec = module.variant_specs[self.variant.name]
         sbatch_args = module.sbatch_args(spec)
+        sbatch_args.update(additional_args)
         lines = ['#!/bin/bash']
         for key, val in sbatch_args.items():
             lines.append('#SBATCH --{}={}'.format(key, val))
         lines.append(cmd)
         batch_path = self.path / 'batch.sh'
         batch_path.write_text('\n'.join(lines))
+        return batch_path
 
     def data_path(self, index):
         return self.path / 'data_{}.pt'.format(index)
@@ -185,9 +187,14 @@ def launch(args):
 
     if args.batch:
         print('Writing batch script')
-        instance.write_batch_script()
-        print('Submitting')
-        #completed = subprocess.run([''])
+        additional_batch_args = {}
+        if args.partition is not None:
+            additional_batch_args['partition'] = args.partition
+        if args.nodelist is not None:
+            additional_batch_args['nodelist'] = args.nodelist
+        batch_path = instance.write_batch_script(additional_batch_args)
+        print('Submitting...')
+        completed = subprocess.run(['sbatch', str(batch_path.resolve())])
     else:
         instance.run()
 
@@ -198,6 +205,8 @@ if __name__ == '__main__':
     parser.add_argument('base_dir', type=str)
     parser.add_argument('variant', type=str)
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--batch', action='store_true')
     parser.add_argument('--careful', action='store_true')
+    parser.add_argument('--batch', action='store_true')
+    parser.add_argument('--partition', type=str)
+    parser.add_argument('--nodelist', type=str)
     launch(parser.parse_args())
