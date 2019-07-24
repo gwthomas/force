@@ -1,43 +1,43 @@
 import numpy as np
-import torch
+import tensorflow as tf
 
-from gtml.models.basic import mlp
-from gtml.rl.env import get_env, integral_dimensionality
+from gtml.callbacks import Periodic
+from gtml.rl.env import get_gym_env, integral_dimensionality
 from gtml.rl.policy import CategoricalPolicy, GaussianPolicy
 from gtml.rl.ppo import ProximalPolicyOptimization
 from gtml.rl.sampling import rollout
+import gtml.util as util
 from gtml.workflow.config import *
 
 
 config_info = Config([
     ConfigItem('env', str, REQUIRED),
-    ConfigItem('T', int, REQUIRED),
-    ConfigItem('render', bool, False)
+    ConfigItem('T', int, REQUIRED)
 ])
 
 
 def actor_critic_for_env(env, hidden_dims=[100,100]):
     obs_dim = integral_dimensionality(env.observation_space)
     action_dim = integral_dimensionality(env.action_space)
-    policy_net = mlp([obs_dim] + hidden_dims + [action_dim])
+    policy_net = util.mlp(obs_dim, hidden_dims + [action_dim])
     policy = CategoricalPolicy(policy_net)
-    value_fn = mlp([obs_dim] + hidden_dims + [1])
+    value_fn = util.mlp(obs_dim, hidden_dims + [1])
     return policy, value_fn
 
 
 def main(exp, cfg):
-    env = get_env(cfg['env'], should_render=cfg['render'])
+    env = get_gym_env(cfg['env'])
     policy, value_fn = actor_critic_for_env(env)
+    alg = ProximalPolicyOptimization(env, policy, value_fn,
+                                     tf.keras.optimizers.Adam, T=cfg['T'])
 
-    def evaluate():
+    def evaluate(n_rollouts=100):
         exp.log('Evaluating...')
-        episodes = rollout(env, policy, 100)
+        episodes = alg.sampler.rollouts(n_rollouts)
         returns = [episode.total_reward for episode in episodes]
-        exp.log('Average return: {}', np.mean(returns))
+        exp.log('Average return over {} rollouts: {}', len(returns), np.mean(returns))
 
-    alg = ProximalPolicyOptimization(env, policy, value_fn, torch.optim.Adam,
-                                     T=cfg['T'])
-    alg.add_callback('post-iteration', evaluate)
+    alg.add_callback('post-iteration', Periodic(10, evaluate))
     alg.run(n_iterations=100000)
 
 

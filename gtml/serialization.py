@@ -1,7 +1,7 @@
 class Serializable:
-    # Should return a list of strings, which are the names of the attributes
-    # to be serialized (override this method in subclass)
     def _state_attrs(self):
+        """Should return a list of strings, which are the names of the
+        attributes to be serialized (override this method in subclass)"""
         return []
 
     def state_dict(self):

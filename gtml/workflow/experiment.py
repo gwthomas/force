@@ -1,3 +1,5 @@
+import pickle
+
 from collections import defaultdict
 import json
 from pathlib import Path
@@ -5,9 +7,9 @@ import subprocess
 import shutil
 import sys
 
-import torch
+import tensorflow as tf
+tf.compat.v1.enable_eager_execution()
 
-from gtml.constants import DEVICE
 import gtml.util as util
 
 
@@ -45,18 +47,25 @@ class ExperimentVariant:
         return self.family.module.config_info.parse_json_file(self.path / 'spec.json')
 
 
+def _extract_index(checkpoint_path):
+    return checkpoint_path.split('/')[-1].lstrip('ckpt-')
+
 class ExperimentInstance:
     def __init__(self, variant, seed):
         self.variant = variant
         self.seed = seed
         self.path = variant.path / 'seed{}'.format(seed)
-        self.log_file = None # call instantiate to create this
-        self.serializables = {}
+        self.checkpoint_dir = self.path / 'checkpoints'
         self.data = defaultdict(list)
+        self.data_dir = self.path / 'data'
+        self.log_file = None # call instantiate to create this
 
     @property
     def family(self):
         return self.variant.family
+
+    def data_path(self, index):
+        return self.data_dir / 'data-{}.pkl'.format(index)
 
     def instantiate(self, erase_if_exists):
         if self.path.is_dir():
@@ -89,82 +98,32 @@ class ExperimentInstance:
         batch_path.write_text('\n'.join(lines))
         return batch_path
 
-    def data_path(self, index):
-        return self.path / 'data_{}.pt'.format(index)
-
-    def checkpoint_path(self, index):
-        return self.path / 'checkpoint_{}.pt'.format(index)
-
     def log(self, format_string, *args):
         output = format_string.format(*args)
         print(output)
         self.log_file.write(output + '\n')
 
-    def register_serializables(self, serializables):
-        self.serializables.update(serializables)
+    def setup_checkpointing(self, trackables, max_to_keep=None):
+        self.checkpoint_dir.mkdir(exist_ok=True)
+        self.data_dir.mkdir(exist_ok=True)
+        self.checkpoint = tf.train.Checkpoint(**trackables)
+        self.checkpoint_manager = tf.train.CheckpointManager(self.checkpoint,
+                self.checkpoint_dir,
+                max_to_keep=max_to_keep)
 
-    def list_checkpoints(self):
-        checkpoint_indices = []
-        for path in glob.glob(self.checkpoint_path('*')):
-            filename = os.path.basename(path)
-            digits = filename.lstrip('checkpoint_').rstrip('.pt')
-            checkpoint_indices.append(int(digits))
-        return sorted(checkpoint_indices)
+    def save(self, index=None):
+        saved_path = self.checkpoint_manager.save(index)
+        saved_index = _extract_index(saved_path)
+        with open(self.data_path(saved_index), 'wb') as f:
+            pickle.dump(self.data, f)
 
-    def load(self, index, load_data=True, load_checkpoint=True,
-             raise_on_missing=True, raise_on_extra=False):
-        if load_data:
-            self.data = torch.load(self.data_path(index))
+    def load(self, index):
+        self.checkpoint.restore(self.checkpoint_dir / 'ckpt-{}'.format(index))
+        with open(self.data_path(index), 'rb') as f:
+            self.data = pickle.load(f)
 
-        if load_checkpoint:
-            checkpoint = torch.load(self.checkpoint_path(index),
-                                    map_location=DEVICE)
-
-            existing_keys = set(checkpoint.keys())
-            requested_keys = set(self.serializables.keys())
-
-            missing = requested_keys - existing_keys
-            if missing:
-                if self.verbose:
-                    self.log('WARNING: the following serializable keys were requested but do not exist in the checkpoint:', list(missing))
-                if raise_on_missing:
-                    raise RuntimeError('raise_on_missing triggered')
-
-            extra = existing_keys - requested_keys
-            if extra:
-                if self.verbose:
-                    self.log('WARNING: the following serializables exist in the checkpoint but were not requested:', list(extra))
-                if raise_on_extra:
-                    raise RuntimeError('raise_on_extra triggered')
-
-            for key in requested_keys:
-                if key in existing_keys:
-                    self.serializables[key].load_state_dict(checkpoint[key])
-
-    # Note: this assumes checkpoints are indexed by integers
-    def load_latest(self, **kwargs):
-        checkpoint_indices = self.list_checkpoints()
-        if len(checkpoint_indices) == 0:
-            raise RuntimeError('No available checkpoints')
-        latest_index = checkpoint_indices[-1]
-        self.load(latest_index, **kwargs)
-        return True
-
-    def load_other(self, name, index=None, **kwargs):
-        load_exp = Experiment(name, ensure_exists=True)
-        load_exp.register_serializables(self.serializables)
-        if index is None:
-            load_exp.load_latest(**kwargs)
-        else:
-            load_exp.load(index=index, **kwargs)
-        self.data = load_exp.data
-
-    def save(self, index):
-        checkpoint = {name: obj.state_dict() for name, obj in self.serializables.items()}
-        for obj, path_fn in [(self.data, self.data_path),
-                             (checkpoint, self.checkpoint_path)]:
-            path = path_fn(index)
-            torch.save(obj, path)
+    def load_latest(self):
+        self.load(_extract_index(self.checkpoint_manager.latest_checkpoint))
 
     def run(self):
         cfg = self.variant.get_config()

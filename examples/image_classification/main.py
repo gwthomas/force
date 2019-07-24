@@ -1,14 +1,13 @@
-import torch
-from torch.optim.lr_scheduler import MultiStepLR
+import tensorflow as tf
+import tensorflow_datasets as tfds
 
-import gtml.datasets as datasets
-from gtml.constants import DEVICE
-import gtml.models.resnet as resnet
-from gtml.train import LossFunction, EpochalMinimizer
+from gtml.datasets import mnist
+from gtml.train import EpochalMinimizer
 from gtml.test import test
 import gtml.util as util
 from gtml.workflow.config import *
 
+import pdb
 
 config_info = Config([
     ConfigItem('dataset', ('cifar10', 'mnist', 'svhn'), REQUIRED),
@@ -17,77 +16,61 @@ config_info = Config([
     ConfigItem('weight_decay', float, 1e-4),
     ConfigItem('momentum', float, 0.9),
     ConfigItem('n_epochs', int, 200),
-    ConfigItem('drop_epoch', int, OPTIONAL),
     ConfigItem('eval_train', bool, True)
 ])
 
 
+def create_model(in_shape, n_classes):
+    from tensorflow.keras import layers as L
+    model = tf.keras.Sequential()
+    model.add(L.Conv2D(64, (3, 3), input_shape=in_shape, activation='relu'))
+    model.add(L.Flatten())
+    model.add(L.Dense(128, activation='relu'))
+    model.add(L.Dense(n_classes))
+    return model
+
 def main(exp, cfg):
     if cfg['dataset'] == 'mnist':
-        train_set, test_set = datasets.load_mnist()
-    elif cfg['dataset'] == 'cifar10':
-        train_set, test_set = datasets.load_cifar10()
-    elif cfg['dataset'] == 'svhn':
-        train_set, test_set = datasets.load_svhn()
-    else:
-        raise NotImplementedError
+        train_set, test_set = mnist()
 
-    model = resnet.PreActResNet18()
-    if torch.cuda.is_available():
-        print('CUDA is available :)')
-        model.to(DEVICE)
-    else:
-        print('CUDA is not available :(')
+    model = create_model(train_set.output_shapes[0], 10)
+    def loss_fn(batch):
+        x, y = batch
+        return tf.losses.sparse_softmax_cross_entropy(y, model(x))
+    optimizer = tf.train.MomentumOptimizer(cfg['init_lr'], cfg['momentum'])
+    train = EpochalMinimizer(loss_fn, model.weights, optimizer, train_set.batch(cfg['batch_size']))
 
-    parameters = list(model.parameters())
-    criterion = torch.nn.CrossEntropyLoss()
-    L = LossFunction()
-    L.add_supervised_term(model, criterion)
-    optimizer = torch.optim.SGD(parameters, cfg['init_lr'],
-                                momentum=cfg['momentum'],
-                                weight_decay=cfg['weight_decay'])
-
-    train = EpochalMinimizer(L, optimizer)
-    train.create_data_loader(train_set, batch_size=cfg['batch_size'])
-
-    if cfg['drop_epoch'] is not None:
-        lr_scheduler = MultiStepLR(optimizer, milestones=[cfg['drop_epoch']], gamma=0.1)
-    else:
-        lr_scheduler = None
-
-    exp.register_serializables({
+    exp.setup_checkpointing({
         'model': model,
-        'train': train,
         'optimizer': optimizer,
-        'lr_scheduler': lr_scheduler
+        # 'train': train
     })
 
     def evaluate():
         exp.log('Evaluating...')
-        test_acc = test(model, test_set)
-        exp.data.append('test_acc', test_acc)
+        test_acc = test(model, test_set.batch(cfg['batch_size']))
+        exp.data['test_acc'].append(test_acc)
         if cfg['eval_train']:
-            train_acc = test(model, train_set)
-            exp.data.append('train_acc', train_acc)
+            train_acc = test(model, train_set.batch(cfg['batch_size']))
+            exp.data['train_acc'].append(train_acc)
             exp.log('Accuracy: train = {}, test = {}', train_acc, test_acc)
         else:
             exp.log('Accuracy: test = {}', test_acc)
 
-    def post_step_callback(steps_taken, loss, terms):
-        lr = optimizer.param_groups[0]['lr']
-        exp.log('Iteration {}: lr = {}, loss = {}', steps_taken, lr, loss)
+    def post_step_callback(steps_taken, loss):
+        exp.log('Step {}, Loss = {}', steps_taken, loss)
         exp.data['loss'].append(loss)
-
-    def pre_epoch_callback(epochs_taken):
-        if lr_scheduler is not None:
-            lr_scheduler.step(epoch=epochs_taken)
 
     def post_epoch_callback(epochs_taken):
         exp.log('{} epochs completed.', epochs_taken)
         evaluate()
-        exp.save(index=epochs_taken)
+        exp.save()
 
     train.add_callback('post_step', post_step_callback)
-    train.add_callback('pre_epoch', pre_epoch_callback)
     train.add_callback('post_epoch', post_epoch_callback)
     train.run(cfg['n_epochs'])
+
+
+variant_specs = {
+    'mnist': {'dataset': 'mnist'}
+}

@@ -1,71 +1,26 @@
 import gym
 import numpy as np
-import torch
 
 from gtml.rl.memory import Memory
 from gtml.constants import DEFAULT_DISCOUNT
 
 
-class Environment:
-    def __init__(self, name, discount=DEFAULT_DISCOUNT, should_render=False):
-        self.name = name
-        self.discount = discount
-        self.should_render = should_render
-        self.gym_env = gym.make(name)
-
-    @property
-    def observation_space(self):
-        return self.gym_env.observation_space
-
-    @property
-    def action_space(self):
-        return self.gym_env.action_space
-
-    @property
-    def discrete_actions(self):
-        return isinstance(self.action_space, gym.spaces.Discrete)
-
-    def seed(self, s):
-        self.gym_env.seed(s)
-
-    def reset(self):
-        return torch.from_numpy(self.gym_env.reset()).float()
-
-    def step(self, action):
-        observation, reward, done, info = self.gym_env.step(action)
-        observation = torch.from_numpy(observation).float()
-        return observation, reward, done, info
-
-    def maybe_render(self):
-        if self.should_render:
-            self.gym_env.render()
-
-
 # Implements preprocessing method described in the paper by Mnih, et al.
-class AtariEnvironment(Environment):
-    def __init__(self, name, discount=DEFAULT_DISCOUNT, should_render=False, m=4, size=(84,84)):
-        Environment.__init__(self, name, discount=discount, should_render=should_render)
+class AtariWrapper(gym.ObservationWrapper):
+    def __init__(self, env, should_render=False, m=4, size=(84,84)):
+        super().__init__(env)
         self.m = m
         self.size = size
         self.raw_obs_history = Memory(history)
 
-    def reset(self):
-        self.raw_obs_history.clear()
-        raw_observation = torch.from_numpy(self.gym_env.reset()).float()
-        self.raw_obs_history.add(raw_observation)
-        return self.preprocess(raw_observation)
-
-    def step(self, action):
-        raw_observation, reward, done, info = self.gym_env.step(action)
-        raw_observation = torch.from_numpy(raw_observation).float()
-        self.raw_obs_history.add(raw_observation)
-        return self.preprocess(raw_observation), reward, done, info
+        obs_shape = list(size) + [m]
+        self.observation_space = gym.spaces.Box(0,1, shape=obs_shape)
 
     def luminance(self, img):
         r, g, b = img[:,:,0], img[:,:,1], img[:,:,2]
         return 0.2126*r + 0.7152*g + 0.0722*b
 
-    def preprocess(self, raw_observation):
+    def observation(self, raw_observation):
         recent_raw = self.raw_obs_history.recent(self.m)
 
         # Make sure there are enough frames (duplicate latest if not)
@@ -76,13 +31,13 @@ class AtariEnvironment(Environment):
         # Calculate luminance and resize
         recent_frames = []
         for i in range(self.m):
-            maxed = torch.max(recent_raw[-(i+1)], recent_raw[-(i+2)])
+            maxed = np.maximum(recent_raw[-(i+1)], recent_raw[-(i+2)])
             luma = self.luminance(maxed)
-            resized = torch.Tensor(imresize(luma, self.size))
+            resized = imresize(luma, self.size).astype('float32')
             recent_frames.append(resized)
 
         # Stack and normalize pixel values
-        return torch.stack(recent_frames) / 255.0
+        return np.stack(recent_frames) / 255.0
 
 
 ATARI_NAMES = [
@@ -98,10 +53,10 @@ ATARI_NAMES = [
         'Venture', 'VideoPinball', 'WizardOfWor', 'Zaxxon'
 ]
 
-def get_env(name, discount=DEFAULT_DISCOUNT, should_render=False):
+def get_gym_env(name):
+    env = gym.make(name)
     basename = name.split('-')[0]
-    env_class = AtariEnvironment if basename in ATARI_NAMES else Environment
-    return env_class(name, discount=discount, should_render=should_render)
+    return AtariWrapper(env) if name in ATARI_NAMES else env
 
 
 def integral_dimensionality(space):

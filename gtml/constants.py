@@ -1,6 +1,8 @@
-import torch
+import numpy as np
 
 INF = float('inf')
+
+NP_FLOAT_TYPE = np.float32
 
 # Defaults
 DEFAULT_EPSILON = 1e-8
@@ -23,6 +25,3 @@ if len(_gtml_config.sections()) == 0:
     exit(1)
 DATASETS_DIR = _gtml_config['paths']['DatasetsDir']
 del _gtml_config
-
-# PyTorch device to use for computation
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

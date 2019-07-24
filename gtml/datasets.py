@@ -1,63 +1,14 @@
-import torchvision.datasets as datasets
-import torchvision.transforms as transforms
+import tensorflow as tf
+import tensorflow_datasets as tfds
 
 from gtml.constants import DATASETS_DIR
 
 
-MNIST_MEAN = (0.1307,)
-MNIST_STD = (0.3081,)
-
-def load_mnist(normalize=True, other_transforms=[]):
-    transform_list = [transforms.ToTensor()]
-    if normalize:
-        transform_list.append(transforms.Normalize(MNIST_MEAN, MNIST_STD))
-    transform_list.extend(other_transforms)
-    transform = transforms.Compose(transform_list)
-    return (datasets.MNIST(DATASETS_DIR, train=True, transform=transform, download=True),
-            datasets.MNIST(DATASETS_DIR, train=False, transform=transform, download=True))
-
-def load_fashion_mnist(other_transforms=[]):
-    transform_list = [transforms.ToTensor()]
-    transform_list.extend(other_transforms)
-    transform = transforms.Compose(transform_list)
-    return (datasets.FashionMNIST(DATASETS_DIR, train=True, transform=transform, download=True),
-            datasets.FashionMNIST(DATASETS_DIR, train=False, transform=transform, download=True))
-
-
-def load_emnist(split='bymerge', other_transforms=[]):
-    transform_list = [transforms.ToTensor()]
-    transform_list.extend(other_transforms)
-    transform = transforms.Compose(transform_list)
-    return (datasets.EMNIST(DATASETS_DIR, split, train=True, transform=transform, download=True),
-            datasets.EMNIST(DATASETS_DIR, split, train=False, transform=transform, download=True))
-
-
-CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
-CIFAR10_STD = (0.2470, 0.2435, 0.2616)
-
-def load_cifar10():
-    transform_train = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(CIFAR10_MEAN, CIFAR10_STD)
-    ])
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(CIFAR10_MEAN, CIFAR10_STD)
-    ])
-    return (datasets.CIFAR10(DATASETS_DIR, train=True, transform=transform_train, download=True),
-            datasets.CIFAR10(DATASETS_DIR, train=False, transform=transform_test, download=True))
-
-
-def load_svhn():
-    transform_train = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor()
-    ])
-    transform_test = transforms.Compose([
-        transforms.ToTensor()
-    ])
-    return (datasets.SVHN(DATASETS_DIR, split='train', transform=transform_train, download=True),
-            datasets.SVHN(DATASETS_DIR, split='test', transform=transform_test, download=True))
+def mnist():
+    def process_example(image, label):
+        image = tf.cast(image, tf.float32) / 255.0
+        return (image, label)
+    dataset = tfds.load('mnist', data_dir=DATASETS_DIR, as_supervised=True)
+    train_set = dataset['train']
+    test_set = dataset['test']
+    return train_set.map(process_example), test_set.map(process_example)

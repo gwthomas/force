@@ -22,7 +22,7 @@ class Periodic(Callback):
     def __init__(self, period, impl):
         self.period = period
         self.impl = impl
-        self.countdown = period
+        self.countdown = 1
 
     def __call__(self, *args, **kwargs):
         self.countdown -= 1
