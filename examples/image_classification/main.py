@@ -1,13 +1,12 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from gtml.datasets import mnist
-from gtml.train import EpochalMinimizer
-from gtml.test import test
-import gtml.util as util
-from gtml.workflow.config import *
+from force.datasets import mnist
+from force.train import EpochalMinimizer
+from force.test import test
+import force.util as util
+from force.workflow.config import *
 
-import pdb
 
 config_info = Config([
     ConfigItem('dataset', ('cifar10', 'mnist', 'svhn'), REQUIRED),
@@ -37,13 +36,12 @@ def main(exp, cfg):
     def loss_fn(batch):
         x, y = batch
         return tf.losses.sparse_softmax_cross_entropy(y, model(x))
-    optimizer = tf.train.MomentumOptimizer(cfg['init_lr'], cfg['momentum'])
+    optimizer = tf.keras.optimizers.SGD(cfg['init_lr'], cfg['momentum'])
     train = EpochalMinimizer(loss_fn, model.weights, optimizer, train_set.batch(cfg['batch_size']))
 
     exp.setup_checkpointing({
         'model': model,
-        'optimizer': optimizer,
-        # 'train': train
+        'optimizer': optimizer
     })
 
     def evaluate():

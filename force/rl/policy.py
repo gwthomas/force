@@ -2,7 +2,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 tfd = tfp.distributions
 
-import gtml.util as util
+import force.util as util
 
 class Policy:
     def act(self, observations):

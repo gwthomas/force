@@ -3,12 +3,11 @@ import copy
 import tensorflow as tf
 from tensorflow.data import Dataset
 
-from gtml.callbacks import CallbackManager
-from gtml.constants import DEFAULT_BATCH_SIZE, DEFAULT_DISCOUNT, DEFAULT_GAE_LAMBDA
-from gtml.rl.sampling import ParallelSampler
-from gtml.train import EpochalMinimizer
+from force.callbacks import CallbackManager
+from force.constants import DEFAULT_BATCH_SIZE, DEFAULT_DISCOUNT, DEFAULT_GAE_LAMBDA
+from force.rl.sampling import ParallelSampler
+from force.train import EpochalMinimizer
 
-import pdb
 
 class ProximalPolicyOptimization(CallbackManager):
     def __init__(self, env, policy, value_fn, optimizer,

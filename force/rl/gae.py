@@ -1,5 +1,5 @@
-from gtml.constants import DEFAULT_GAE_LAMBDA
-import gtml.util as util
+from force.constants import DEFAULT_GAE_LAMBDA
+import force.util as util
 
 
 # thx OpenAI (adapted)

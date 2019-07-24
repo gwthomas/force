@@ -1,7 +1,7 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from gtml.constants import DATASETS_DIR
+from force.constants import DATASETS_DIR
 
 
 def mnist():

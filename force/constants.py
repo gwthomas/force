@@ -18,10 +18,10 @@ DEFAULT_FIGURE_SIZE = (8,6)
 # In particular, paths often differ across machines.
 from configparser import ConfigParser
 from pathlib import Path
-_gtml_config = ConfigParser()
-_gtml_config.read(Path.home() / 'gtml.cfg')
-if len(_gtml_config.sections()) == 0:
-    print('Failed to read gtml.cfg')
+_force_config = ConfigParser()
+_force_config.read(Path.home() / 'force.cfg')
+if len(_force_config.sections()) == 0:
+    print('Failed to read force.cfg')
     exit(1)
-DATASETS_DIR = _gtml_config['paths']['DatasetsDir']
-del _gtml_config
+DATASETS_DIR = _force_config['paths']['DatasetsDir']
+del _force_config

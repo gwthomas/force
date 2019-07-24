@@ -3,7 +3,7 @@ import datetime
 import numpy as np
 import tensorflow as tf
 
-from gtml.constants import DEFAULT_TIMESTAMP_FORMAT, NP_FLOAT_TYPE
+from force.constants import DEFAULT_TIMESTAMP_FORMAT, NP_FLOAT_TYPE
 
 
 def npf(x):

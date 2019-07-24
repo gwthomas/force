@@ -1,8 +1,8 @@
 import gym
 import numpy as np
 
-from gtml.rl.memory import Memory
-from gtml.constants import DEFAULT_DISCOUNT
+from force.rl.memory import Memory
+from force.constants import DEFAULT_DISCOUNT
 
 
 # Implements preprocessing method described in the paper by Mnih, et al.

@@ -1,8 +1,8 @@
 import tensorflow as tf
 
-from gtml.callbacks import CallbackManager
-from gtml.constants import DEFAULT_BATCH_SIZE, DEFAULT_NUM_WORKERS, INF
-from gtml.serialization import Serializable
+from force.callbacks import CallbackManager
+from force.constants import DEFAULT_BATCH_SIZE, DEFAULT_NUM_WORKERS, INF
+from force.serialization import Serializable
 
 
 class Minimizer(CallbackManager, Serializable):

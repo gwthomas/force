@@ -10,7 +10,7 @@ import sys
 import tensorflow as tf
 tf.compat.v1.enable_eager_execution()
 
-import gtml.util as util
+import force.util as util
 
 
 class ExperimentFamily:

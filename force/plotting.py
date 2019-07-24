@@ -2,9 +2,9 @@ from collections import OrderedDict
 
 import matplotlib.pyplot as plt
 
-from gtml.constants import DEFAULT_FIGURE_SIZE
+from force.constants import DEFAULT_FIGURE_SIZE
 
-    
+
 class Plot:
     def __init__(self, xlabel, ylabel, title=None, ylim=None, kind='plot'):
         self.xlabel = xlabel
@@ -22,7 +22,7 @@ class Plot:
             info['x'] = x
         if alpha is not None:
             info['alpha'] = alpha
-        self.items[name] = info        
+        self.items[name] = info
 
     def draw(self, ax):
         ax.set_xlabel(self.xlabel)
@@ -59,13 +59,13 @@ class Plot:
                 ax.scatter(x, y, s=2, alpha=alpha)
             if len(names) > 1:
                 ax.legend(names)
-            
+
 
 class Figure:
     def __init__(self, plot=None, title=None, size=DEFAULT_FIGURE_SIZE):
         self.title = title
         self.size = size
-        
+
         if plot is None:
             self.plots = []
         elif isinstance(plot, Plot):
@@ -74,19 +74,19 @@ class Figure:
             self.plots = list(plot)
         else:
             raise ValueError('Argument to Figure constructor should be a Plot object or a list/tuple of Plot objects')
-        
+
     def add_plot(self, plot):
         self.plots.append(plot)
-        
+
     def draw(self, arrangement='horizontal', save_path=None, show=True):
         n_plots = len(self.plots)
         if n_plots == 0:
             print('No plots to draw')
-            
+
         fig = plt.figure(figsize=self.size)
         if self.title is not None:
             fig.suptitle(self.title)
-        
+
         if arrangement == 'horizontal':
             nrows, ncols = 1, n_plots
         elif arrangement == 'vertical':
@@ -98,7 +98,7 @@ class Figure:
             axes = [axes]
         else:
             plt.tight_layout()
-            
+
         for i, plot in enumerate(self.plots):
             if min(nrows, ncols) == 1:
                 ax = axes[i]
@@ -107,7 +107,7 @@ class Figure:
                 col = i % ncols
                 ax = axes[row,col]
             plot.draw(ax)
-            
+
         if save_path is not None:
             plt.savefig(path, transparent=transparent, bbox_inches="tight")
         if show:

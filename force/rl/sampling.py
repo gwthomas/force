@@ -5,9 +5,9 @@ import gym
 import numpy as np
 import tensorflow as tf
 
-from gtml.constants import INF
-from gtml.rl.gae import estimate_advantages_and_value_targets
-import gtml.util as util
+from force.constants import INF
+from force.rl.gae import estimate_advantages_and_value_targets
+import force.util as util
 
 
 class Episode:

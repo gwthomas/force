@@ -1,13 +1,13 @@
 import numpy as np
 import tensorflow as tf
 
-from gtml.callbacks import Periodic
-from gtml.rl.env import get_gym_env, integral_dimensionality
-from gtml.rl.policy import CategoricalPolicy, GaussianPolicy
-from gtml.rl.ppo import ProximalPolicyOptimization
-from gtml.rl.sampling import rollout
-import gtml.util as util
-from gtml.workflow.config import *
+from force.callbacks import Periodic
+from force.rl.env import get_gym_env, integral_dimensionality
+from force.rl.policy import CategoricalPolicy, GaussianPolicy
+from force.rl.ppo import ProximalPolicyOptimization
+from force.rl.sampling import rollout
+import force.util as util
+from force.workflow.config import *
 
 
 config_info = Config([
