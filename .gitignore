@@ -6,4 +6,3 @@
 *.pyc
 *.txt
 **/__pycache__
-**/variants
