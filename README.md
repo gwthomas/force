@@ -1,5 +1,5 @@
 # Force
-Force is a library for deep reinforcement learning (RL) research, built on PyTorch and OpenAI Gym. It is under active development. Basic features at present:
+Force is a library for deep reinforcement learning (RL) research, built on [PyTorch](https://pytorch.org/) and [OpenAI Gym](https://gym.openai.com/). It is under active development. Basic features at present:
  * Implementations of various deep RL algorithms ([DDPG](https://arxiv.org/abs/1509.02971), [TD3](https://arxiv.org/abs/1802.09477), [SAC](https://arxiv.org/abs/1812.05905), [FQE](https://arxiv.org/abs/1903.08738))
  * Tools for managing configuration and launching jobs on the [Slurm](https://slurm.schedmd.com/overview.html) scheduler
 
