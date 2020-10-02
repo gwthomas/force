@@ -29,13 +29,10 @@ class DynamicsModel(Module, BaseModel):
         self.diff_normalizer = Normalizer(state_dim)
 
         if predict_reward:
-            self.predict_reward = True
             self.reward_normalizer = Normalizer(1)
             output_dim = state_dim + 1
         else:
-            self.predict_reward = False
             output_dim = state_dim
-        self.reward_normalizer = Normalizer(1)
 
         input_dim = state_dim + action_dim
         self.net = mlp([input_dim, *hidden_dims, output_dim], layer_class=layer_class)
@@ -118,16 +115,15 @@ class BatchEnsembleDynamicsModel(Module, BaseModel):
         self.ensemble_size = ensemble_size
         self.state_dim = state_dim
         self.action_dim = action_dim
+        self.predict_reward = predict_reward
 
         self.state_normalizer = Normalizer(state_dim)
         self.diff_normalizer = Normalizer(state_dim)
 
         if predict_reward:
-            self.predict_reward = True
             self.reward_normalizer = Normalizer(1)
             output_dim = state_dim + 1
         else:
-            self.predict_reward = False
             output_dim = state_dim
 
         input_dim = state_dim + action_dim
