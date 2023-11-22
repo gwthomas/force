@@ -6,3 +6,4 @@
 *.pyc
 *.txt
 **/__pycache__
+.idea
