@@ -1,0 +1,17 @@
+{
+  "algorithm": "TD3",
+  "initial_steps": 5000,
+  "agent": {
+    "_tag": "TD3",
+    "critic_optimizer": {
+      "algorithm": "Adam",
+      "lr": 1e-3
+    },
+    "actor_optimizer": {
+      "algorithm": "Adam",
+      "lr": 1e-3
+    },
+    "batch_size": 100,
+    "target_update_rate": 0.005
+  }
+}

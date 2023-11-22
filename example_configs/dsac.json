@@ -1,0 +1,22 @@
+{
+  "algorithm": "DSAC",
+  "initial_steps": 5000,
+  "agent": {
+    "_tag": "DSAC",
+    "critic": {
+      "ensemble": {
+        "num_models": 2
+      }
+    },
+    "critic_optimizer": {
+      "algorithm": "Adam",
+      "lr": 3e-4
+    },
+    "alpha_optimizer": {
+      "algorithm": "Adam",
+      "lr": 3e-4
+    },
+    "batch_size": 256,
+    "target_update_rate": 0.005
+  }
+}
