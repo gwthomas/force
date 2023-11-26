@@ -22,10 +22,10 @@ class IQL(ActorCritic):
     class Config(ActorCritic.Config):
         beta = 3.0
         tau = 0.7
-        actor = GaussianPolicy.Config()
-        critic = QFunctionEnsemble.Config()
-        vf = ValueFunction.Config()
-        vf_optimizer = Optimizer.Config()
+        actor = GaussianPolicy
+        critic = QFunctionEnsemble
+        vf = ValueFunction
+        vf_optimizer = Optimizer
 
     def __init__(self, cfg, obs_space, act_space,
                  actor=None, critic=None):

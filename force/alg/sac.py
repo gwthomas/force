@@ -21,8 +21,8 @@ from force.value_functions import QFunctionEnsemble, DiscreteQFunctionEnsemble
 
 class SAC(ActorCritic):
     class Config(ActorCritic.Config):
-        actor = SquashedGaussianPolicy.Config()
-        critic = QFunctionEnsemble.Config()
+        actor = SquashedGaussianPolicy
+        critic = QFunctionEnsemble
         init_alpha = 1.0
         autotune_alpha = True
         target_entropy = Field(float, required=False)
@@ -127,11 +127,11 @@ def soft_value(qs, alpha):
 # We represent the policy implicitly rather than having a separate network
 class DSAC(Agent):
     class Config(Agent.Config):
-        critic = DiscreteQFunctionEnsemble.Config()
+        critic = DiscreteQFunctionEnsemble
         loss_type = Choice(NAMED_LOSS_FUNCTIONS.keys(), default='MSE')
-        critic_optimizer = Optimizer.Config()
+        critic_optimizer = Optimizer
         target_update_rate = Field(0.005, check=is_positive)
-        alpha_optimizer = Optimizer.Config()
+        alpha_optimizer = Optimizer
         init_alpha = 1.0
         autotune_alpha = True
         target_entropy = Field(float, required=False, check=is_positive)

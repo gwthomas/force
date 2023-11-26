@@ -4,7 +4,7 @@ from copy import deepcopy
 import torch
 
 from force.alg.base import Agent
-from force.config import Field
+from force.config import Field, Choice
 from force.nn import ConfigurableModule, Optimizer
 from force.nn.loss import NAMED_LOSS_FUNCTIONS
 from force.nn.util import get_device, update_ema
@@ -14,9 +14,9 @@ from force.util import batch_map, dict_get_several, pymean
 
 class ActorCritic(Agent):
     class Config(Agent.Config):
-        actor_optimizer = Optimizer.Config()
-        critic_optimizer = Optimizer.Config()
-        critic_loss_criterion = 'MSE'
+        actor_optimizer = Optimizer
+        critic_optimizer = Optimizer
+        critic_loss_criterion = Choice(NAMED_LOSS_FUNCTIONS.keys(), default='MSE')
         target_update_rate = Field(0.005, check=lambda x: 0 < x <= 1)
 
     def __init__(self, cfg, obs_space, act_space, actor, critic,

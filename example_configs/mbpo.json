@@ -11,15 +11,19 @@
         "num_models": 5,
         "num_hidden_layers": 4,
         "hidden_dim": 200
-      }
-    },
-    "model_trainer": {
+      },
       "optimizer": {
         "algorithm": "AdamW",
         "lr": 0.001
-      }
+      },
+      "batch_size": 256
     },
     "solver": {
+      "critic": {
+        "ensemble": {
+          "num_models": 2
+        }
+      },
       "critic_optimizer": {
         "algorithm": "Adam",
         "lr": 3e-4
@@ -27,7 +31,8 @@
       "actor_optimizer": {
         "algorithm": "Adam",
         "lr": 3e-4
-      }
+      },
+      "batch_size": 256
     }
   }
 }

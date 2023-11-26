@@ -8,8 +8,8 @@ from force.value_functions import QFunctionEnsemble
 
 class TD3(ActorCritic):
     class Config(ActorCritic.Config):
-        actor = DeterministicPolicy.Config()
-        critic = QFunctionEnsemble.Config()
+        actor = DeterministicPolicy
+        critic = QFunctionEnsemble
         explore_noise = 0.1
         smooth_noise = 0.2
         noise_clip = 0.5

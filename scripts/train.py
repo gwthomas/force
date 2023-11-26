@@ -12,7 +12,7 @@ from force.sampling import SimpleSampler
 
 class RLExperiment(Experiment):
     class Config(Experiment.Config):
-        wrapper = BufferedRLAlgorithm.Config()
+        wrapper = BufferedRLAlgorithm
         agent = TaggedUnion({
             name: cls.Config() for name, cls in NAMED_ALGORITHMS.items()
         })

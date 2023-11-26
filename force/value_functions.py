@@ -8,7 +8,7 @@ from force.nn import ConfigurableModule, MLP, MLPEnsemble
 class DiscreteQFunction(ConfigurableModule):
     """Maps an observation to all actions' Q values"""
     class Config(ConfigurableModule.Config):
-        mlp = MLP.Config()
+        mlp = MLP
 
     def __init__(self, cfg, obs_shape, num_actions):
         super().__init__(cfg)
@@ -27,7 +27,7 @@ class DiscreteQFunction(ConfigurableModule):
 class DiscreteQFunctionEnsemble(ConfigurableModule):
     """Ensemble of functions which map observation to all Q values"""
     class Config(ConfigurableModule.Config):
-        ensemble = MLPEnsemble.Config()
+        ensemble = MLPEnsemble
 
     def __init__(self, cfg, obs_shape, num_actions):
         super().__init__(cfg)
@@ -62,7 +62,7 @@ class GeneralValueFunction(ConfigurableModule):
     """
 
     class Config(ConfigurableModule.Config):
-        mlp = MLP.Config()
+        mlp = MLP
 
     def __init__(self, cfg, obs_shape, action_shape=None, goal_shape=None):
         super().__init__(cfg)
@@ -98,7 +98,7 @@ class GeneralValueFunctionEnsemble(ConfigurableModule):
     shape_relevant_kwarg_keys = {'which'}
 
     class Config(ConfigurableModule.Config):
-        ensemble = MLPEnsemble.Config(num_models=2)
+        ensemble = MLPEnsemble
 
     def __init__(self, cfg, obs_shape, action_shape=None, goal_shape=None):
         super().__init__(cfg)

@@ -2,26 +2,30 @@ import random
 
 from frozendict import frozendict
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import torch.distributions as D
 
+from force import defaults
 from force.config import BaseConfig
-from force.dynamics.base import DynamicsModel
 from force.env.util import space_dim
 from force.distributions import DiagonalGaussian
 from force.nn import ConfigurableModule, MLPEnsemble, Optimizer
+from force.nn.util import get_device
 
 
-class GaussianDynamicsEnsemble(ConfigurableModule, DynamicsModel):
+class GaussianDynamicsEnsemble(ConfigurableModule):
     shape_relevant_kwarg_keys = {'num_models'}
 
     class Config(BaseConfig):
-        ensemble = MLPEnsemble.Config()
-        min_std = 1e-8
-        max_std = 10.0
+        ensemble = MLPEnsemble
+        optimizer = Optimizer
+        batch_size = defaults.BATCH_SIZE
+        std_bound_loss_weight = 0.01
 
-    def __init__(self, cfg, obs_space, act_space):
-        assert 0 < cfg.min_std < cfg.max_std
+    def __init__(self, cfg, obs_space, act_space, device=None):
         ConfigurableModule.__init__(self, cfg)
+        device = get_device(device)
 
         # Determine dimensions
         self.obs_dim = obs_dim = space_dim(obs_space)
@@ -32,8 +36,16 @@ class GaussianDynamicsEnsemble(ConfigurableModule, DynamicsModel):
         out_shape = torch.Size([2 * (obs_dim + 1) + 1])
 
         # Create ensemble of models
-        self.ensemble = MLPEnsemble(cfg.ensemble, in_shape, out_shape)
+        self.ensemble = MLPEnsemble(cfg.ensemble, in_shape, out_shape).to(device)
         self.num_models = cfg.ensemble.num_models
+
+        # Variables for min/max logstd
+        self.min_logstd = nn.Parameter(-5*torch.ones(self.obs_dim + 1, device=device))
+        self.max_logstd = nn.Parameter(torch.zeros(self.obs_dim + 1, device=device))
+
+        # Optimizer
+        parameters = [*self.ensemble.parameters(), self.min_logstd, self.max_logstd]
+        self.optimizer = Optimizer(cfg.optimizer, parameters)
 
     def get_output_shape(self, input_shape, **kwargs):
         num_models = kwargs['num_models']
@@ -60,8 +72,9 @@ class GaussianDynamicsEnsemble(ConfigurableModule, DynamicsModel):
         zeros = torch.zeros(*states.shape[:-1], 1, dtype=states.dtype, device=states.device)
         means = torch.cat((states, zeros), dim=-1) + deltas
 
+        logstds = self.max_logstd - F.softplus(self.max_logstd - logstds)
+        logstds = self.min_logstd + F.softplus(logstds - self.min_logstd)
         stds = torch.exp(logstds)
-        stds = stds.clamp(self.cfg.min_std, self.cfg.max_std)
 
         return {
             'next_obs_mean': means[:,:,:-1],
@@ -104,3 +117,32 @@ class GaussianDynamicsEnsemble(ConfigurableModule, DynamicsModel):
             distributions['reward'].loc.mean(1),
             distributions['terminal'].probs.mean(1)
         )
+
+    def update(self, buffer):
+        # Sample and reshape batch
+        batch = buffer.sample(self.num_models * self.cfg.batch_size)
+
+        # Special handling for ensembles
+        if self.num_models > 1:
+            batch_dims = (self.cfg.batch_size, self.num_models)
+            for k in batch.keys():
+                v = batch[k]
+                if v.ndim > 1:  # vectors
+                    batch[k] = v.reshape(*batch_dims, -1)
+                else:           # scalars
+                    batch[k] = v.reshape(*batch_dims)
+
+        # Model forward
+        distributions = self.distribution(batch['observations'], batch['actions'])
+
+        # Optimize NLL loss
+        total_log_prob = distributions['next_obs'].log_prob(batch['next_observations']) + \
+                         distributions['reward'].log_prob(batch['rewards']) + \
+                         distributions['terminal'].log_prob(batch['terminals'].float())
+        nll_loss = -total_log_prob.mean()
+        std_bound_loss = torch.sum(self.max_logstd) - torch.sum(self.min_logstd)
+        loss = nll_loss + self.cfg.std_bound_loss_weight * std_bound_loss
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return loss.item()

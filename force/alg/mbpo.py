@@ -5,7 +5,7 @@ from tqdm import trange
 from force.alg.base import Agent
 from force.alg.sac import SAC
 from force.config import Field
-from force.dynamics import GaussianDynamicsEnsemble, DynamicsModelTrainer
+from force.dynamics import GaussianDynamicsEnsemble
 from force.nn.util import get_device
 from force.sampling import ReplayBuffer
 from force.util import batch_map, prefix_dict_keys, pymean
@@ -13,10 +13,9 @@ from force.util import batch_map, prefix_dict_keys, pymean
 
 class MBPO(Agent):
     class Config(Agent.Config):
-        solver = SAC.Config()
+        solver = SAC
         solver_updates = 20
-        model = GaussianDynamicsEnsemble.Config()
-        model_trainer = DynamicsModelTrainer.Config()
+        model = GaussianDynamicsEnsemble
         model_update_period = 250
         model_updates = 1000
         initial_model_updates = 10000
@@ -31,7 +30,6 @@ class MBPO(Agent):
 
         self.solver = SAC(cfg.solver, obs_space, act_space, device=device)
         self.model_ensemble = GaussianDynamicsEnsemble(cfg.model, obs_space, act_space).to(device)
-        self.model_trainer = DynamicsModelTrainer(cfg.model_trainer, self.model_ensemble)
         self.model_buffer = ReplayBuffer(obs_space, act_space, cfg.model_buffer_capacity, device=device)
 
         self._initial_fit_done = False
@@ -41,7 +39,7 @@ class MBPO(Agent):
 
     def _update_models(self, data, num_updates):
         self.log('Updating models...')
-        losses = [self.model_trainer.update(data) for _ in trange(num_updates)]
+        losses = [self.model_ensemble.update(data) for _ in trange(num_updates)]
 
         N = 10  # number of losses to average over when logging
         self.log(f'Loss went from {pymean(losses[:N])} to {pymean(losses[-N:])}')
@@ -99,6 +97,10 @@ class MBPO(Agent):
         solver_diagnostics = self.solver.additional_diagnostics(data)
         diagnostics.update(prefix_dict_keys('solver', solver_diagnostics))
 
+        with torch.no_grad():
+            diagnostics['model_min_logstd'] = self.model_ensemble.min_logstd.mean()
+            diagnostics['model_max_logstd'] = self.model_ensemble.max_logstd.mean()
+
         data = data.get(as_dict=True)
         states = data['observations']
         actions = data['actions']
@@ -112,5 +114,4 @@ class MBPO(Agent):
         diagnostics['next_state_error'] = F.mse_loss(ns_pred, next_states)
         diagnostics['reward_error'] = F.mse_loss(r_pred, rewards)
         diagnostics['terminal_error'] = F.mse_loss(t_pred, terminals)
-        # diagnostics['terminal_error'] = (t_pred == terminals).float().mean()
         return diagnostics

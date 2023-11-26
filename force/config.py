@@ -1,4 +1,5 @@
 from copy import deepcopy
+import inspect
 
 
 SIMPLE_TYPES = {bool, int, float, str}
@@ -36,6 +37,10 @@ class Field:
     def set(self, value):
         self.check(value)
         self.value = value
+
+    def __repr__(self):
+        s = f'Field({self.dtype.__name__}, default = {self.default}, value = {self.value}'
+        return s + ')'
 
 
 class Choice(Field):
@@ -93,18 +98,20 @@ class TaggedUnion:
 class BaseConfig:
     """Base class for all configs"""
 
-    def __init__(self, **kwargs):
-        v = self.vars()
-        v.update(kwargs)
-        for key, val in v.items():
-            setattr(self, key, val)
+    def __init__(self):
+        # Create an instance-specific copy of all class variables
+        for key, val in inspect.getmembers(self.__class__):
+            # Skip methods and private identifiers
+            if inspect.isroutine(val) or key.startswith('_'):
+                continue
+            setattr(self, key, deepcopy(val))
 
     def vars(self):
         vars = {}
         for key in dir(self):
             val = getattr(self, key)
-            if callable(val) or key.startswith('_'):
-                # Skip methods and private identifiers
+            # Skip methods and private identifiers
+            if inspect.ismethod(val) or key.startswith('_'):
                 continue
             vars[key] = val
         return vars
@@ -167,27 +174,35 @@ class BaseConfig:
                 self.set(key, val)
             elif isinstance(val, dict):
                 existing_val = getattr(self, key)
-                if isinstance(existing_val, BaseConfig):
-                    existing_val.update(val)
+                if inspect.isclass(existing_val):
+                    assert issubclass(existing_val, Configurable)
+                    cfg = existing_val.Config()
+                    cfg.update(val)
+                    setattr(self, key, cfg)
                 elif isinstance(existing_val, TaggedUnion):
                     setattr(self, key, existing_val.parse(val))
                 else:
-                    raise ValueError(f'Given a dict for key {key}, which is not a BaseConfig or TaggedUnion instance, but rather {existing_val}')
+                    raise ValueError(f'Given a dict for key {key}, which is not a Configurable subclass or TaggedUnion instance, but rather {existing_val}')
             else:
                 raise ValueError(f'Object of unexpected type: {val} (type {type(val)})')
 
     def resolve(self):
         to_set = {}
-        for key, field in self.vars().items():
-            if isinstance(field, BaseConfig):
-                field.resolve()
-            elif isinstance(field, Field):
-                if field.value is not None:
-                    to_set[key] = field.value
-                elif field.required:
+        for key, val in self.vars().items():
+            if inspect.isclass(val):
+                assert issubclass(val, Configurable)
+                cfg = val.Config()
+                cfg.resolve()
+                to_set[key] = cfg
+            elif isinstance(val, BaseConfig):
+                val.resolve()
+            elif isinstance(val, Field):
+                if val.value is not None:
+                    to_set[key] = val.value
+                elif val.required:
                     raise ValueError(f'Required value not specified for key {key}')
                 else:
-                    to_set[key] = field.default
+                    to_set[key] = val.default
         for k, v in to_set.items():
             setattr(self, k, v)
 
@@ -208,5 +223,3 @@ class Configurable:
     def __init__(self, cfg):
         assert type(cfg) is self.__class__.Config, f'Wrong config type for {self}'
         self.cfg = deepcopy(cfg)
-        # for key, val in vars(self.cfg).items():
-        #     setattr(self, key, val)

@@ -12,7 +12,7 @@ class SupervisedLearning(IterativeAlgorithm):
         batch_size = 32
         num_workers = 1
         eval_period = 1000
-        optimizer = Optimizer.Config()
+        optimizer = Optimizer
 
     def __init__(self, cfg, model, loss_fn, train_set, eval_set,
                  extra_eval_metrics=None):

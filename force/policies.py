@@ -102,10 +102,10 @@ class MixturePolicy(BasePolicy):
 
 class DeterministicPolicy(BasePolicy, ConfigurableModule):
     class Config(ConfigurableModule.Config):
-        mlp = MLP.Config()
+        mlp = MLP
 
     def __init__(self, cfg, input_shape, output_shape, squash=True):
-        super().__init__(cfg)
+        ConfigurableModule.__init__(self, cfg)
         self.net = MLP(cfg.mlp, input_shape, output_shape,
                        final_activation=('tanh' if squash else None))
 
@@ -117,10 +117,10 @@ class StochasticPolicy(BasePolicy, ConfigurableModule):
     use_special_eval = False
 
     class Config(ConfigurableModule.Config):
-        mlp = MLP.Config()
+        mlp = MLP
 
     def __init__(self, cfg, input_shape, output_shape):
-        super().__init__(cfg)
+        ConfigurableModule.__init__(self, cfg)
         self.net = MLP(cfg.mlp, input_shape, output_shape)
 
     @abstractmethod

@@ -7,6 +7,7 @@ import torch
 from tqdm import trange
 
 from force import defaults
+from force.config import Configurable
 from force.env.batch import BatchedEnv
 from force.log import get_global_log
 from force.nn import ConfigurableModule
@@ -16,12 +17,12 @@ from force.sampling import ReplayBuffer, SimpleSampler, sample_episodes_batched
 from force.util import prefix_dict_keys, pymean
 
 
-class IterativeAlgorithm(ABC, ConfigurableModule):
-    class Config(ConfigurableModule.Config):
+class IterativeAlgorithm(ABC, Configurable):
+    class Config(Configurable.Config):
         max_iterations = 1000
 
     def __init__(self, cfg):
-        ConfigurableModule.__init__(self, cfg)
+        Configurable.__init__(self, cfg)
         self.log = get_global_log()
         self.iterations_done = 0
 
@@ -171,7 +172,6 @@ class BufferedRLAlgorithm(RLAlgorithm):
         else:
             raise ValueError('Initial data should be ReplayBuffer or dict')
 
-        self.to(device)
         self.updates_done = 0
 
     def get_counters(self) -> dict:
