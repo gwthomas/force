@@ -121,6 +121,15 @@ def select1_per_row(matrix, indices):
     return matrix.gather(1, indices.unsqueeze(1)).squeeze(1)
 
 
+def freepeat(x, repetitions, dim):
+    """Repeats a tensor along a new axis.
+    It is "free" because expand does not copy data.
+    """
+    expand_arg = [-1 for _ in range(x.ndim+1)]
+    expand_arg[dim] = repetitions
+    return torch.unsqueeze(x, dim=dim).expand(*expand_arg)
+
+
 def _mem_str(m):
     if m > 10**9:
         return f'{m / 10**9:.1f} GB'

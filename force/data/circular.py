@@ -70,6 +70,11 @@ class CircularDataset(Dataset):
             k: CircularData(dtype, shape, capacity, device)
             for k, (dtype, shape) in components.items()
         }, device=device)
+        self._capacity = capacity
+
+    @property
+    def capacity(self):
+        return self._capacity
 
     def _check_keys(self, items: dict):
         expected_keyset = set(self.keys())

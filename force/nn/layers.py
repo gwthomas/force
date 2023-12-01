@@ -1,13 +1,10 @@
 import math
 
-from frozendict import frozendict
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from force.nn.module import Module
-from force.nn.shape import is_valid_shape, matches_shape, shape2str
 
 
 def cat_dims(input_shape):
@@ -81,8 +78,20 @@ class Linear(Module, nn.Linear):
         return nn.Linear.forward(self, input)
 
 
+
+def odd_log(x):
+    """An unbounded sigmoid-like activation"""
+    s = torch.sign(x)
+    return s * torch.log(1 + s*x)
+
 NAMED_POINTWISE_ACTIVATIONS = {
-    'relu', 'sigmoid', 'softplus', 'tanh'
+    'relu': F.relu,
+    'softplus': F.softplus,
+    'silu': F.silu,
+    'swish': F.silu,    # alias
+    'sigmoid': F.sigmoid,
+    'tanh': F.tanh,
+    'oddlog': odd_log
 }
 
 class PointwiseActivation(Module):
@@ -90,7 +99,7 @@ class PointwiseActivation(Module):
         super().__init__()
         assert name in NAMED_POINTWISE_ACTIVATIONS
         self.name = name
-        self.fn = getattr(F, name)
+        self.fn = NAMED_POINTWISE_ACTIVATIONS[name]
 
     def get_output_shape(self, input_shape, **kwargs):
         return input_shape

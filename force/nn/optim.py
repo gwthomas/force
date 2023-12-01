@@ -14,8 +14,8 @@ class Optimizer(ConfigurableModule):
         super().__init__(cfg)
         optimizer_class = getattr(torch.optim, cfg.algorithm)
         assert 'lr' not in cfg.kwargs
-        kwargs = dict(cfg.kwargs, lr=cfg.lr)
-        self.optimizer = optimizer_class(parameters, **kwargs)
+        self.kwargs = {'lr': cfg.lr, **cfg.kwargs}
+        self.optimizer = optimizer_class(parameters, **self.kwargs)
 
     def zero_grad(self):
         self.optimizer.zero_grad()
@@ -29,4 +29,5 @@ class Optimizer(ConfigurableModule):
             param_group['lr'] = lr
 
     def __repr__(self):
-        return f'{self.cfg.algorithm}(lr={self.cfg.lr})'
+        kwargs_str = ', '.join(f'{k}={v}' for k, v in self.kwargs.items())
+        return f'{self.cfg.algorithm}({kwargs_str})'

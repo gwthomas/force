@@ -90,12 +90,12 @@ def batch_iterator(args, batch_size=1000, shuffle=False):
         batch_end = min(batch_size * (batch_index + 1), n)
         batch_indices = indices[batch_start:batch_end]
         if multi_arg:
-            yield tuple(arg[batch_indices] for arg in args)
+            yield [arg[batch_indices] for arg in args]
         else:
             yield args[batch_indices]
 
 
-def batch_map(fn, args, batch_size=1000, cat_dim=0):
+def batch_map(fn, args, batch_size=1000):
     if type(args) in {list, tuple}:
         results = [fn(*batch) for batch in batch_iterator(args, batch_size=batch_size)]
     else:
@@ -103,12 +103,17 @@ def batch_map(fn, args, batch_size=1000, cat_dim=0):
 
     proto = results[0]
     if isinstance(proto, torch.Tensor):
-        return torch.cat(results, dim=cat_dim)
-    elif isinstance(proto, tuple) and all(isinstance(x, torch.Tensor) for x in proto):
+        return torch.cat(results)
+    elif isinstance(proto, tuple):
+        assert all(isinstance(x, torch.Tensor) for x in proto)
         n = len(proto)
-        return tuple(torch.cat([x[i] for x in results], dim=cat_dim) for i in range(n))
+        return tuple(torch.cat([x[i] for x in results]) for i in range(n))
+    elif isinstance(proto, dict):
+        assert all(isinstance(x, torch.Tensor) for x in proto.values())
+        keys = list(proto.keys())
+        return {k: torch.cat([d[k] for d in results]) for k in keys}
     else:
-        raise NotImplementedError
+        raise ValueError('batch_map can only by applied to functions which outputs tensors or tuples/dicts of tensors')
 
 
 def time_since(start_t):

@@ -40,9 +40,14 @@ class RLExperiment(Experiment):
         else:
             initial_data = None
 
+        agent_kwargs = {'device': defaults.DEVICE}
+        if cfg.algorithm == 'MBPO':
+            from force.env.termination_functions import TERMINATION_FUNCTIONS
+            domain_root = cfg.domain.split('-')[0]
+            agent_kwargs['termination_fn'] = TERMINATION_FUNCTIONS[domain_root]
         agent = NAMED_ALGORITHMS[cfg.algorithm](
             cfg.agent, env.observation_space, env.action_space,
-            device=defaults.DEVICE
+            **agent_kwargs
         )
         self.log(f'Agent: {agent}')
         return BufferedRLAlgorithm(

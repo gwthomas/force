@@ -2,7 +2,7 @@ from copy import deepcopy
 import inspect
 
 
-SIMPLE_TYPES = {bool, int, float, str}
+JSON_TYPES = {bool, int, float, str, dict, list}
 
 
 class Field:
@@ -124,7 +124,7 @@ class BaseConfig:
         return vars
 
     def set(self, key, value):
-        assert type(value) in SIMPLE_TYPES
+        assert type(value) in JSON_TYPES
         path_list = key.split('.')
         result, info = self._set_helper(path_list, value)
         if result == 'not found':
@@ -139,22 +139,22 @@ class BaseConfig:
     def _set_helper(self, path_list, value):
         path0 = path_list[0]
         if len(path_list) == 1:
-            existing_val = getattr(self, path0)
-            if type(existing_val) in SIMPLE_TYPES:
-                expected_type = type(existing_val)
+            cfg_val = getattr(self, path0)
+            if type(cfg_val) in JSON_TYPES:
+                expected_type = type(cfg_val)
                 if type(value) == expected_type:
                     setattr(self, path0, value)
                     return 'success', None
                 else:
                     return 'wrong type', expected_type
-            elif isinstance(existing_val, Field):
+            elif isinstance(cfg_val, Field):
                 try:
-                    existing_val.set(value)
+                    cfg_val.set(value)
                 except AssertionError:
                     return 'check failed', None
                 return 'success', None
             else:
-                raise ValueError(f'Invalid Config: should be simple type or Field but got {existing_val}')
+                raise ValueError(f'Invalid Config: should be JSON type or Field but got {cfg_val}')
         elif hasattr(self, path0):
             subconfig = getattr(self, path0)
             assert isinstance(subconfig, BaseConfig)
@@ -170,21 +170,18 @@ class BaseConfig:
                 continue
 
             assert hasattr(self, key), f'Cannot set non-existent key {key} in {self}'
-            if type(val) in SIMPLE_TYPES:
-                self.set(key, val)
-            elif isinstance(val, dict):
-                existing_val = getattr(self, key)
-                if inspect.isclass(existing_val):
-                    assert issubclass(existing_val, Configurable)
-                    cfg = existing_val.Config()
-                    cfg.update(val)
-                    setattr(self, key, cfg)
-                elif isinstance(existing_val, TaggedUnion):
-                    setattr(self, key, existing_val.parse(val))
-                else:
-                    raise ValueError(f'Given a dict for key {key}, which is not a Configurable subclass or TaggedUnion instance, but rather {existing_val}')
+            cfg_val = getattr(self, key)
+            if inspect.isclass(cfg_val):
+                assert issubclass(cfg_val, Configurable)
+                assert isinstance(val, dict)
+                cfg = cfg_val.Config()
+                cfg.update(val)
+                setattr(self, key, cfg)
+            elif isinstance(cfg_val, TaggedUnion):
+                assert isinstance(val, dict)
+                setattr(self, key, cfg_val.parse(val))
             else:
-                raise ValueError(f'Object of unexpected type: {val} (type {type(val)})')
+                self.set(key, val)
 
     def resolve(self):
         to_set = {}
