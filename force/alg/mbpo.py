@@ -13,11 +13,6 @@ from force.sampling import ReplayBuffer
 from force.util import batch_map, prefix_dict_keys, pymean
 
 
-# Batch size used for computing next states and evaluations.
-# Does not affect training. Adjust according to CUDA memory limits.
-BATCH_MAP_SIZE = 10000
-
-
 class MBPO(Agent):
     class Config(Agent.Config):
         solver = SAC
@@ -82,8 +77,7 @@ class MBPO(Agent):
             with torch.no_grad():
                 return batch_map(
                     self.model_ensemble.log_likelihood,
-                    tensors_repeated,
-                    batch_size=BATCH_MAP_SIZE
+                    tensors_repeated
                 ).mean(0).cpu()
 
         epochs_since_update = 0
@@ -163,8 +157,7 @@ class MBPO(Agent):
         for t in range(self._rollout_length):
             with torch.no_grad():
                 actions, next_states, rewards, terminals = batch_map(
-                    self._act_and_transition, states,
-                    batch_size=BATCH_MAP_SIZE
+                    self._act_and_transition, states
                 )
 
             truncateds = torch.full_like(terminals, t == self._rollout_length - 1)
@@ -244,8 +237,7 @@ class MBPO(Agent):
         with torch.no_grad():
             model_diagnostics = batch_map(
                 compute_model_metrics,
-                data.get('observations', 'actions', 'next_observations', 'rewards', 'terminals'),
-                batch_size=BATCH_MAP_SIZE
+                data.get('observations', 'actions', 'next_observations', 'rewards', 'terminals')
             )
             model_diagnostics = {k: v.mean() for k, v in model_diagnostics.items()}
             model_diagnostics['log_likelihood'] = self._model_log_likelihood

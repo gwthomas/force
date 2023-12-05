@@ -1,7 +1,7 @@
 import torch
 
 
-def halfcheetah(next_state):
+def never_terminate(next_state):
     return torch.full([len(next_state)], False, device=next_state.device)
 
 def hopper(next_state):
@@ -39,11 +39,26 @@ def walker2d(next_state):
     done = ~not_done
     return done
 
+def ant(next_state):
+    x = next_state[:, 0]
+    not_done = torch.isfinite(next_state).all(axis=-1) \
+             * (x >= 0.2) \
+             * (x <= 1.0)
+    done = ~not_done
+    return done
+
+def humanoid(next_state):
+    z = next_state[:,0]
+    done = (z < 1.0) + (z > 2.0)
+    return done
+
 
 TERMINATION_FUNCTIONS = {
-    'HalfCheetah': halfcheetah,
+    'HalfCheetah': never_terminate,
     'Hopper': hopper,
     'InvertedPendulum': inverted_pendulum,
     'InvertedDoublePendulum': inverted_double_pendulum,
-    'Walker2d': walker2d
+    'Walker2d': walker2d,
+    'AntMod': ant,
+    'HumanoidMod': humanoid
 }

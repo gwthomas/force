@@ -8,6 +8,8 @@ import string
 import numpy as np
 import torch
 
+from force import defaults
+
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -72,7 +74,7 @@ def discounted_sum(rewards, discount):
     return torch.sum(rewards * exp_discounts)
 
 
-def batch_iterator(args, batch_size=1000, shuffle=False):
+def batch_iterator(args, batch_size, shuffle=False):
     if type(args) in {list, tuple}:
         multi_arg = True
         n = len(args[0])
@@ -84,22 +86,26 @@ def batch_iterator(args, batch_size=1000, shuffle=False):
         n = len(args)
 
     indices = torch.randperm(n) if shuffle else torch.arange(n)
-    n_batches = ceil(float(n) / batch_size)
-    for batch_index in range(n_batches):
-        batch_start = batch_size * batch_index
-        batch_end = min(batch_size * (batch_index + 1), n)
+    batch_start = 0
+    while batch_start < n:
+        batch_end = min(batch_start + batch_size, n)
         batch_indices = indices[batch_start:batch_end]
         if multi_arg:
             yield [arg[batch_indices] for arg in args]
         else:
             yield args[batch_indices]
+        batch_start = batch_end
 
-
-def batch_map(fn, args, batch_size=1000):
+def batch_map(fn, args, batch_size=defaults.BATCH_MAP_SIZE):
+    """Used to compute fn(args) (or fn(*args)) where the args tensor(s) may be
+    large enough to cause an out-of-memory error if evaluated all at once.
+    This function breaks the args up into batches, applies fn to each batch,
+    and concatenates the results back together.
+    """
     if type(args) in {list, tuple}:
-        results = [fn(*batch) for batch in batch_iterator(args, batch_size=batch_size)]
+        results = [fn(*batch) for batch in batch_iterator(args, batch_size)]
     else:
-        results = [fn(batch) for batch in batch_iterator(args, batch_size=batch_size)]
+        results = [fn(batch) for batch in batch_iterator(args, batch_size)]
 
     proto = results[0]
     if isinstance(proto, torch.Tensor):
