@@ -4,6 +4,7 @@ import torch.nn as nn
 
 from force import defaults
 
+
 # Any activation functions added below can be looked up by name
 NAMED_ACTIVATIONS = {
     'relu': nn.ReLU,
@@ -14,16 +15,16 @@ NAMED_ACTIVATIONS = {
 }
 
 
-def get_initializer(name: str):
-    return getattr(nn.init, f'{name}_')
-
-
 TORCH_INT_TYPES = {
     torch.int8, torch.uint8,
     torch.int16,
     torch.int32,
     torch.int64
 }
+
+
+def get_initializer(name: str):
+    return getattr(nn.init, f'{name}_')
 
 
 def get_device(d):

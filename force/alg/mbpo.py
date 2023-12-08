@@ -69,6 +69,9 @@ class MBPO(Agent):
     def _train_models(self, data):
         tensors = data.get()[:-1] # ignore truncated
 
+        # Re-fit model's normalizer to all states
+        self.model_ensemble.normalizer.fit(tensors[0])
+
         # Repeat
         num_models = self.model_ensemble.num_models
         tensors_repeated = [freepeat(x, num_models, dim=1) for x in tensors]
@@ -109,9 +112,9 @@ class MBPO(Agent):
                 self.log(f'Final: {final_lls}')
                 self.log(f'Best : {best_lls}')
 
-                elite_info = torch.topk(best_lls, self.cfg.num_elites)
+                elite_info = torch.topk(final_lls, self.cfg.num_elites)
                 self._elite_indices = elite_info.indices.tolist()
-                self._model_log_likelihood = lls.mean()
+                self._model_log_likelihood = final_lls.mean()
                 self._elite_log_likelihood = elite_info.values.mean()
                 return
 
@@ -225,13 +228,15 @@ class MBPO(Agent):
             model_indices = [random.choice(self._elite_indices)]
             ns_distr, r_distr = self.model_ensemble.distribution(s, a, model_indices)
             t_distr = self.model_ensemble.terminal_distribution(ns, model_indices)
+            ns_hat_t_distr = self.model_ensemble.terminal_distribution(ns_distr.loc, model_indices)
             return {
                 'next_state_log_prob': ns_distr.log_prob(ns),
                 'reward_log_prob': r_distr.log_prob(r),
                 'terminal_log_prob': t_distr.log_prob(t),
                 'next_state_error': torch.abs(ns_distr.loc - ns).mean(-1),
                 'reward_error': torch.abs(r_distr.loc - r),
-                'terminal_error': torch.abs(t_distr.probs - t)
+                'terminal_error': torch.abs(t_distr.probs - t),
+                'predicted_terminal_error': torch.abs(ns_hat_t_distr.probs - t)
             }
 
         with torch.no_grad():

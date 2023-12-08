@@ -11,6 +11,7 @@ from force.config import BaseConfig
 from force.env.util import space_dim
 from force.distributions import DiagonalGaussian
 from force.nn import ConfigurableModule, MLPEnsemble, Optimizer
+from force.nn.layers import Normalizer
 from force.nn.util import get_device, freepeat
 from force.util import batch_iterator
 
@@ -33,20 +34,23 @@ class GaussianDynamicsEnsemble(ConfigurableModule):
         self.termination_fn = termination_fn
 
         # Determine dimensions
-        self.obs_dim = obs_dim = space_dim(obs_space)
-        self.act_dim = act_dim = space_dim(act_space)
-        obs_shape = torch.Size([obs_dim])
-        act_shape = torch.Size([act_dim])
+        self.state_dim = state_dim = space_dim(obs_space)
+        self.action_dim = action_dim = space_dim(act_space)
+        state_shape = torch.Size([state_dim])
+        act_shape = torch.Size([action_dim])
         # 2x because we predict both mean and (log)std for obs and reward
-        out_shape = torch.Size([2 * (obs_dim + 1)])
+        out_shape = torch.Size([2 * (state_dim + 1)])
+
+        # State will be normalized before passing to model
+        self.normalizer = Normalizer(self.state_dim, device=device)
 
         # Create ensemble of models
-        self.ensemble = MLPEnsemble(cfg.ensemble, (obs_shape, act_shape), out_shape).to(device)
+        self.ensemble = MLPEnsemble(cfg.ensemble, (state_shape, act_shape), out_shape).to(device)
         self.num_models = cfg.ensemble.num_models
 
         # Variables for min/max logstd
-        self.min_logstd = nn.Parameter(-10*torch.ones(self.obs_dim + 1, device=device))
-        self.max_logstd = nn.Parameter(torch.zeros(self.obs_dim + 1, device=device))
+        self.min_logstd = nn.Parameter(-10*torch.ones(self.state_dim + 1, device=device))
+        self.max_logstd = nn.Parameter(torch.zeros(self.state_dim + 1, device=device))
 
         # Optimizer
         parameters = [
@@ -55,7 +59,7 @@ class GaussianDynamicsEnsemble(ConfigurableModule):
         ]
 
         if termination_fn is None:
-            self.terminal_discriminator = MLPEnsemble(cfg.terminal_discriminator, obs_shape, torch.Size([])).to(device)
+            self.terminal_discriminator = MLPEnsemble(cfg.terminal_discriminator, state_shape, torch.Size([])).to(device)
             assert cfg.ensemble.num_models == cfg.terminal_discriminator.num_models
             parameters.extend(self.terminal_discriminator.parameters())
         else:
@@ -66,24 +70,26 @@ class GaussianDynamicsEnsemble(ConfigurableModule):
     def get_output_shape(self, input_shape, **kwargs):
         num_models = kwargs['num_models']
         assert num_models <= self.num_models
-        assert input_shape == (torch.Size([num_models, self.obs_dim]),
-                               torch.Size([num_models, self.act_dim]))
+        assert input_shape == (torch.Size([num_models, self.state_dim]),
+                               torch.Size([num_models, self.action_dim]))
         return frozendict(
-            next_state_mean=torch.Size([num_models, self.obs_dim]),
-            next_state_std=torch.Size([num_models, self.obs_dim]),
+            next_state_mean=torch.Size([num_models, self.state_dim]),
+            next_state_std=torch.Size([num_models, self.state_dim]),
             reward_mean=torch.Size([num_models]),
             reward_std=torch.Size([num_models])
         )
 
     def forward(self, inputs, **kwargs):
         states, actions = inputs
-        outputs = self.ensemble(inputs, **kwargs)
+        normalized_states = self.normalizer(states)
+        outputs = self.ensemble([normalized_states, actions], **kwargs)
 
         # Divide up the outputs
         means, logstds = torch.chunk(outputs, 2, dim=-1)
 
-        logstds = self.max_logstd - F.softplus(self.max_logstd - logstds)
-        logstds = self.min_logstd + F.softplus(logstds - self.min_logstd)
+        # logstds = self.max_logstd - F.softplus(self.max_logstd - logstds)
+        # logstds = self.min_logstd + F.softplus(logstds - self.min_logstd)
+        logstds = torch.clamp(logstds, min=self.min_logstd, max=self.max_logstd)
         stds = torch.exp(logstds)
 
         return {
@@ -112,7 +118,7 @@ class GaussianDynamicsEnsemble(ConfigurableModule):
 
     def terminal_distribution(self, next_states, model_indices=None):
         assert next_states.ndim == 3
-        assert next_states.shape[-1] == self.obs_dim
+        assert next_states.shape[-1] == self.state_dim
         if self.termination_fn is None:
             if model_indices is None:
                 model_indices = torch.arange(self.num_models)
@@ -124,7 +130,7 @@ class GaussianDynamicsEnsemble(ConfigurableModule):
             return D.Bernoulli(logits=outputs)
         else:
             lead_dims = next_states.shape[:2]
-            batched_next_states = next_states.reshape(-1, self.obs_dim)
+            batched_next_states = next_states.reshape(-1, self.state_dim)
             batched_terminals = self.termination_fn(batched_next_states)
             assert batched_terminals.shape == (lead_dims[0] * lead_dims[1],)
             terminals = batched_terminals.reshape(*lead_dims)
@@ -175,7 +181,8 @@ class GaussianDynamicsEnsemble(ConfigurableModule):
         nll_loss = -self.log_likelihood(states, actions, next_states, rewards, terminals).mean()
 
         # Loss to make logstd bounds tighter
-        std_bound_loss = torch.sum(self.max_logstd) - torch.sum(self.min_logstd)
+        std_bound_loss = torch.sum(self.max_logstd) - torch.sum(self.min_logstd) + \
+                         torch.sum(F.relu(self.min_logstd - self.max_logstd))
 
         # Total loss
         loss = nll_loss + self.cfg.std_bound_loss_weight * std_bound_loss

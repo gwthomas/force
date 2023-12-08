@@ -5,6 +5,33 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from force.nn.module import Module
+from force.nn.util import get_device
+
+
+class Normalizer(Module):
+    def __init__(self, dim, device=None):
+        super().__init__()
+        self.dim = dim
+        self._device = device = get_device(device)
+        self.register_buffer('mean', torch.zeros(dim, device=device))
+        self.register_buffer('std', torch.ones(dim, device=device))
+
+    def fit(self, x):
+        assert x.ndim == 2
+        assert x.shape[1] == self.dim
+        std, mean = torch.std_mean(x, dim=0)
+        self.mean.copy_(mean)
+        self.std.copy_(std)
+
+    def get_output_shape(self, input_shape):
+        assert input_shape[-1] == self.dim
+        return input_shape
+
+    def forward(self, x):
+        return (x - self.mean) / self.std
+
+    def extra_repr(self):
+        return f'dim={self.dim}'
 
 
 def cat_dims(input_shape):
