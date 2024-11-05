@@ -64,7 +64,10 @@ def index_page(directory,
             if incl_algorithm is not None and alg not in incl_algorithm:
                 continue
             for run_dir in iter_subdirs(alg_dir):
-                cfg_path = run_dir/'config.json'
+                if run_dir.name == 'debug':
+                    continue
+
+                cfg_path = run_dir/'config.yaml'
                 log_path = run_dir/'log.txt'
                 status_path = run_dir/'status.txt'
                 if not(cfg_path.is_file() and log_path.is_file() and status_path.is_file()):

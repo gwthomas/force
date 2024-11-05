@@ -1,7 +1,6 @@
 import torch.nn as nn
 import torchvision.models as tvm
 
-from force import defaults
 from force.nn.module import ConfigurableModule
 
 

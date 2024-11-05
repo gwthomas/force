@@ -1,17 +1,18 @@
-from .actor_critic import ActorCritic
-from .base import IterativeAlgorithm, Agent, BufferedRLAlgorithm
 from .iql import IQL
 from .mbpo import MBPO
-from .redq import REDQ
-from .sac import SAC, DSAC
+from .ppo import PPO
+from .redq import REDQSAC, REDQSOP
+from .sac import SAC
+from .sop import SOP
 from .td3 import TD3
 
 
 NAMED_ALGORITHMS = {
-    'DSAC': DSAC,
     'IQL': IQL,
     'MBPO': MBPO,
-    'REDQ': REDQ,
+    'PPO': PPO,
+    'REDQSAC': REDQSAC, 'REDQSOP': REDQSOP,
     'SAC': SAC,
+    'SOP': SOP,
     'TD3': TD3
 }

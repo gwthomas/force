@@ -1,0 +1,6 @@
+algorithm: IQL
+agent:
+  _tag: IQL
+  vf_optimizer:
+    algorithm: Adam
+    lr: 0.0003

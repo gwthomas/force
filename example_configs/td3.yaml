@@ -1,0 +1,10 @@
+algorithm: TD3
+agent:
+  _tag: TD3
+  actor_optimizer:
+    algorithm: Adam
+    lr: 0.001
+  critic_optimizer:
+    algorithm: Adam
+    lr: 0.001
+  batch_size: 100

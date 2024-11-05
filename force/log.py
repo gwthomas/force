@@ -9,7 +9,8 @@ class Log:
             self._file = None
         else:
             self._path = Path(path)
-            assert not self._path.exists(), f'File already exists at {self.path}'
+            if self._path.exists():
+                print(f'WARNING: overwriting existing log at {self.path}')
             self._file = self._path.open('w', buffering=1)
 
     @property

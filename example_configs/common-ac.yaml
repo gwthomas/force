@@ -1,0 +1,26 @@
+initial_steps: 5000
+num_epochs: 100
+updates_per_epoch: 5000
+steps_per_update: 1
+num_eval_episodes: 10
+agent:
+  actor:
+    net:
+      num_hidden_layers: 2
+      hidden_dim: 256
+      activation: relu
+  critic:
+    num_models: 2
+    net:
+      num_hidden_layers: 2
+      hidden_dim: 256
+      activation: relu
+  actor_optimizer:
+    algorithm: Adam
+    lr: 0.003
+  critic_optimizer:
+    algorithm: Adam
+    lr: 0.003
+  buffer_capacity: 1000000
+  batch_size: 256
+  target_update_rate: 0.005

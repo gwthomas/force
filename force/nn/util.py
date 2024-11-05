@@ -47,6 +47,7 @@ def torchify(x, double_to_float=True, int_to_long=True, device=None):
     if isinstance(x, dict):
         return {k: torchify(v, double_to_float, int_to_long, device) for k, v in x.items()}
 
+    # If we got here, x should be a single tensor-like object
     if torch.is_tensor(x):
         pass
     elif isinstance(x, np.ndarray):
@@ -82,10 +83,10 @@ class ModuleWrapper:
         return getattr(self.module, attr)
 
 
-def random_indices(high, size=None, replace=False, p=None):
+def random_indices(high, size=None, replace=False, p=None, device=None):
     assert isinstance(high, int)
     p_np = numpyify(p) if torch.is_tensor(p) else p
-    return torchify(np.random.choice(high, size=size, replace=replace, p=p_np))
+    return torchify(np.random.choice(high, size=size, replace=replace, p=p_np), device=device)
 
 def random_choice(tensor, size=None, replace=False, p=None, dim=0):
     indices = random_indices(tensor.shape[dim], size=size, replace=replace, p=p)
@@ -129,6 +130,103 @@ def freepeat(x, repetitions, dim):
     expand_arg = [-1 for _ in range(x.ndim+1)]
     expand_arg[dim] = repetitions
     return torch.unsqueeze(x, dim=dim).expand(*expand_arg)
+
+
+def batch_iterator(args, batch_size, shuffle=False, device=None):
+    if type(args) in {list, tuple}:
+        which = 'sequence'
+        n = len(args[0])
+        for i, arg_i in enumerate(args):
+            assert isinstance(arg_i, torch.Tensor)
+            assert len(arg_i) == n
+    elif isinstance(args, dict):
+        which = 'dict'
+        values = tuple(args.values())
+        n = len(values[0])
+        for v in values:
+            assert isinstance(v, torch.Tensor)
+            assert len(v) == n
+    else:
+        which = 'single'
+        n = len(args)
+
+    indices = torch.randperm(n) if shuffle else torch.arange(n)
+    batch_start = 0
+    while batch_start < n:
+        batch_end = min(batch_start + batch_size, n)
+        batch_indices = indices[batch_start:batch_end]
+        if which == 'sequence':
+            result = [arg[batch_indices] for arg in args]
+        elif which == 'dict':
+            result = {k: v[batch_indices] for k, v in args.items()}
+        else:
+            result = args[batch_indices]
+
+        if device is not None:
+            result = torchify(result, device=device)
+
+        yield result
+
+        batch_start = batch_end
+
+def batch_map(fn, args, batch_size=defaults.BATCH_MAP_SIZE, batch_device=None):
+    """Used to compute fn(args) (or fn(*args)) where the args tensor(s) may be
+    large enough to cause an out-of-memory error if evaluated all at once.
+    This function breaks the args up into batches, applies fn to each batch,
+    and concatenates the results back together.
+    """
+    iterator_args = (args, batch_size, False, batch_device)
+    if type(args) in {list, tuple}:
+        results = [fn(*batch) for batch in batch_iterator(*iterator_args)]
+    else:
+        results = [fn(batch) for batch in batch_iterator(*iterator_args)]
+
+    proto = results[0]
+    if isinstance(proto, torch.Tensor):
+        return torch.cat(results)
+    elif isinstance(proto, tuple):
+        assert all(isinstance(x, torch.Tensor) for x in proto)
+        n = len(proto)
+        return tuple(torch.cat([x[i] for x in results]) for i in range(n))
+    elif isinstance(proto, dict):
+        assert all(isinstance(x, torch.Tensor) for x in proto.values())
+        keys = list(proto.keys())
+        return {k: torch.cat([d[k] for d in results]) for k in keys}
+    else:
+        raise ValueError('batch_map can only by applied to functions which outputs tensors or tuples/dicts of tensors')
+
+
+
+def collapse_map(f, x):
+    """Applies f, a function which maps [b, d] -> [b, d'], where
+        b is an arbitrary batch dimension,
+        d is the input feature dimension,
+        d' is the output feature dimension
+    to x, a tensor of shape [b1, ..., bk, d], to produce an output of shape
+    [b1, ..., bk, d'].
+    The batch dimensions b1, ..., bk will be collapsed to a single dimension b,
+    f applied, then b reshaped to b1, ..., bk.
+    """
+    bs = x.shape[:-1]
+    b = torch.tensor(bs).prod()
+    x = x.reshape(b, -1)
+    fx = f(x)
+    assert len(fx) == b, f'collapse_map f must maintain the batch dimension'
+    if fx.ndim == 1:
+        return fx.reshape(*bs)
+    elif fx.ndim == 2:
+        return fx.reshape(*bs, -1)
+    else:
+        raise ValueError('Too many output dimensions for collapse_map')
+
+
+def keywise_stack(list_of_dicts, dim=0):
+    keys = tuple(list_of_dicts[0].keys())
+    ret = {k: [] for k in keys}
+    for d in list_of_dicts:
+        for k in keys:
+            ret[k].append(d[k])
+    return {k: torch.stack(ret[k], dim=dim) for k in keys}
 
 
 def _mem_str(m):

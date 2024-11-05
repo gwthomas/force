@@ -1,0 +1,28 @@
+algorithm: MBPO
+updates_per_epoch: 1000
+agent:
+  _tag: MBPO
+  model_ensemble:
+    batch_size: 256
+    net:
+      activation: swish
+      hidden_dim: 200
+      num_hidden_layers: 4
+    num_models: 7
+    optimizer:
+      algorithm: AdamW
+      kwargs:
+        weight_decay: 0.0001
+      lr: 0.001
+  num_elites: 5
+  rollout_batch_size: 100000
+  solver:
+    actor_optimizer:
+      algorithm: Adam
+      lr: 0.0003
+    batch_size: 256
+    critic:
+      num_models: 2
+    critic_optimizer:
+      algorithm: Adam
+      lr: 0.0003

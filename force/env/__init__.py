@@ -1,5 +1,8 @@
 import gymnasium as gym
 
+from .torch_wrapper import TorchWrapper, TorchVectorWrapper
+from .util import EnvConfig, VectorEnvConfig, get_env
+
 
 # Register modified envs
 gym.register(
@@ -14,10 +17,3 @@ gym.register(
     entry_point="force.env.mujoco:HumanoidModEnv",
     max_episode_steps=1000
 )
-
-
-# Register D4RL envs (if installed)
-try:
-    import d4rl
-except:
-    print('Failed to import d4rl')

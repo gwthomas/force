@@ -1,0 +1,6 @@
+algorithm: SAC
+agent:
+  _tag: SAC
+  actor:
+    squash: true
+    use_state_dependent_std: true

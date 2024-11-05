@@ -26,7 +26,7 @@ def shape2str(shape):
     elif isinstance(shape, tuple):
         return '(' + ', '.join([shape2str(x) for x in shape]) + ')'
     elif isinstance(shape, frozendict):
-        return '{' + ', '.join([f'{k}: {v}' for k, v in shape.items()]) + '}'
+        return '{' + ', '.join([f'{k}: {shape2str(v)}' for k, v in shape.items()]) + '}'
     else:
         raise ValueError(f'Not a shape: {shape}')
 

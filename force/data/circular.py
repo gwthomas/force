@@ -5,12 +5,10 @@ from force.nn.util import get_device, torchify
 
 
 class CircularData(AbstractData):
-    def __init__(self, dtype: torch.dtype, elem_shape: tuple, capacity: int,
+    def __init__(self, dtype: torch.dtype, elem_shape: torch.Size, capacity: int,
                  device=None):
         super().__init__(dtype)
-        assert isinstance(elem_shape, tuple)
-        for dim in elem_shape:
-            assert isinstance(dim, int)
+        assert isinstance(elem_shape, torch.Size)
         device = get_device(device)
 
         self._dtype = dtype
@@ -30,7 +28,7 @@ class CircularData(AbstractData):
         return self._capacity
 
     def _shape(self):
-        return (len(self), *self._elem_shape)
+        return torch.Size([len(self), *self._elem_shape])
 
     def _get(self, indices):
         assert torch.all(indices < len(self))
@@ -48,6 +46,7 @@ class CircularData(AbstractData):
         self._counter += 1
 
     def extend(self, xs):
+        xs = torchify(xs, device=self._device)
         assert xs.shape[1:] == self._elem_shape
         batch_size = len(xs)
         assert batch_size <= self._capacity, 'Trying to extend by more than buffer capacity'
@@ -62,6 +61,9 @@ class CircularData(AbstractData):
             self._buf[-fit:] = xs[:fit]
             self._buf[:overflow] = xs[-overflow:]
         self._counter += batch_size
+
+    def to(self, device: torch.device):
+        self._buf = self._buf.to(device)
 
 
 class CircularDataset(Dataset):
@@ -82,14 +84,14 @@ class CircularDataset(Dataset):
         assert actual_keyset == expected_keyset, \
             f'Expected keys {expected_keyset}, but received {actual_keyset}'
 
-    def append(self, items: dict):
-        self._check_keys(items)
-        for k, x in items.items():
+    def append(self, **kwargs):
+        self._check_keys(kwargs)
+        for k, x in kwargs.items():
             self._data[k].append(x)
 
-    def extend(self, items: dict):
-        self._check_keys(items)
+    def extend(self, **kwargs):
+        self._check_keys(kwargs)
         k0 = self.keys()[0]
-        for k, xs in items.items():
-            assert len(xs) == len(items[k0]), 'All data must have same length'
+        for k, xs in kwargs.items():
+            assert len(xs) == len(kwargs[k0]), 'All data must have same length'
             self._data[k].extend(xs)

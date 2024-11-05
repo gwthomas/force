@@ -1,11 +1,12 @@
-import json
 from os import PathLike
 from pathlib import Path
+
+import yaml
 
 
 def is_valid_run_dir(dir: Path):
     assert dir.is_dir()
-    config_path = dir/'config.json'
+    config_path = dir/'config.yaml'
     log_path = dir/'log.txt'
     status_path = dir/'status.txt'
     return config_path.is_file() and log_path.is_file() and status_path.is_file()
@@ -34,8 +35,8 @@ def get_nested(cfgd, spec):
 
 
 def filter_check(run_dir: Path, filters: dict) -> bool:
-    with open(run_dir/'config.json', 'r') as f:
-        config = json.load(f)
+    with open(run_dir/'config.yaml', 'r') as f:
+        config = yaml.load(f)
 
     for key, value in filters.items():
         cfg_value = get_nested(config, key.split('.'))

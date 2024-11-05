@@ -5,6 +5,7 @@ import itertools
 from pathlib import Path
 import random
 
+from force.defaults import DATETIME_FORMAT
 from force.util import random_string, try_parse, yes_no_prompt
 from force.workflow import slurm
 
@@ -42,7 +43,7 @@ def launch(additional_sbatch_args, nodes, main, configs, sets):
         exit()
 
     # For generating run dir names
-    now_str = datetime.now().strftime('%m-%d-%y_%H.%M.%S')
+    now_str = datetime.now().strftime(DATETIME_FORMAT)
     random.seed()
 
     # Build the variant map, which maps a variant name to the corresponding command

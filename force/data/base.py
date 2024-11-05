@@ -36,15 +36,15 @@ class AbstractData(ABC):
     def _shape(self) -> tuple:
         raise NotImplementedError
 
-    @abstractmethod
-    def _get(self, indices) -> torch.Tensor:
-        raise NotImplementedError
-
     @property
     def shape(self):
         shape = self._shape()
-        assert is_valid_shape(shape)
+        assert is_valid_shape(shape), f'{shape} is not valid shape'
         return shape
+
+    @abstractmethod
+    def _get(self, indices) -> torch.Tensor:
+        raise NotImplementedError
 
     def __getitem__(self, indices: torch.Tensor) -> torch.Tensor:
         return self._get(indices)
@@ -61,8 +61,8 @@ class AbstractData(ABC):
 
 class Dataset:
     def __init__(self, data: dict, device=None):
-        self._data = data
-        self._device = device
+        self._data = dict(data)
+        self._device = get_device(device)
 
     def __len__(self):
         lengths = [len(v) for v in self.values()]
@@ -97,35 +97,29 @@ class Dataset:
     def shapes(self):
         return {k: v.shape for k, v in self._data.items()}
 
-    def __getattr__(self, attr):
-        if attr in self._data:
-            return self._data[attr]
-        else:
-            raise AttributeError
+    # def __getattr__(self, attr):
+    #     if attr in self._data:
+    #         return self._data[attr]
+    #     else:
+    #         raise AttributeError
 
     def __getitem__(self, item) -> dict:
-        if isinstance(item, int):
-            # Select the same index from each component
-            indices = _get_indices(item)
-            return {
-                k: v[indices][0].to(self._device) for k, v in self._data.items()
-            }
-        elif isinstance(item, torch.Tensor) or type(item) in {slice, list}:
-            # Select the same indices from each component
-            indices = _get_indices(item)
-            return {
-                k: v[indices].to(self._device) for k, v in self._data.items()
-            }
-        else:
-            raise KeyError(f'Invalid key: {item}')
+        indices = _get_indices(item)
+        ret = {}
+        for k, v in self._data.items():
+            ret[k] = v[indices].to(self._device)
+            if isinstance(item, int):
+                ret[k] = ret[k][0]
+        return ret
 
     def sample(self, n, replace=False) -> dict:
-        indices = random_indices(len(self), size=n, replace=replace)
+        indices = random_indices(len(self), size=n, replace=replace, device=self._device)
         return self[indices]
 
-    def get(self, *args, as_dict=False):
+    def get(self, *args, as_dict=False, device=None):
         keys = self.keys() if len(args) == 0 else args
-        values = [self._data[k].get().to(self._device) for k in keys]
+        device = self._device if device is None else device
+        values = [self._data[k].get().to(device) for k in keys]
         if as_dict:
             return dict(zip(keys, values))
         elif len(args) == 1:
@@ -133,28 +127,59 @@ class Dataset:
         else:
             return values
 
-    def save(self, path):
+    def to(self, device: torch.device):
+        for v in self._data.values():
+            v.to(device)
+        self._device = device
+
+    def save_to_file(self, f: h5py.File, prefix: str = None):
+        assert isinstance(f, h5py.File)
+        for k, v in self.items():
+            dataset_name = k if prefix is None else f'{prefix}/{k}'
+            f.create_dataset(dataset_name, data=v.get().cpu().numpy())
+
+    def save_to_path(self, path: str, prefix: str = None):
         with h5py.File(path, 'w') as f:
-            for k, v in self.items():
-                f.create_dataset(k, data=v.get().numpy())
+            self.save_to_file(f, prefix)
 
 
 class TensorData(AbstractData):
-    def __init__(self, tensor: torch.Tensor):
-        self._buf = tensor
-
-    def _dtype(self):
-        return self._buf.dtype
+    def __init__(self, tensor: torch.Tensor, copy=True):
+        super().__init__(tensor.dtype)
+        self._buf = tensor.clone() if copy else tensor
+        self._device = tensor.device
 
     def _shape(self):
-        return tuple(self._buf.shape)
+        return self._buf.shape
 
     def _get(self, indices):
         return self._buf[indices]
 
+    def __repr__(self):
+        return f'<{type(self).__name__} type={self.dtype} shape={self.shape} device={self._device}>'
+
+    def to(self, device: torch.device):
+        self._buf = self._buf.to(device)
+        self._device = device
+
+    def share_memory(self):
+        self._buf.share_memory_()
+
+    @staticmethod
+    def from_data(data: AbstractData):
+        return TensorData(data.get())
+
 class TensorDataset(Dataset):
-    def __init__(self, data: dict, device=None):
+    def __init__(self, data: dict, copy=True, device=None):
         device = get_device(device)
         super().__init__({
-            k: TensorData(v.to(device)) for k, v in data.items()
+            k: TensorData(v.to(device), copy) for k, v in data.items()
         }, device=device)
+
+    def share_memory(self):
+        for v in self._data.values():
+            v.share_memory()
+
+    @staticmethod
+    def from_dataset(dataset: Dataset, copy=True):
+        return TensorDataset(dataset.get(as_dict=True), copy, dataset.device)

@@ -24,10 +24,14 @@ class HDF5BackedData(AbstractData):
         self._dataset = dataset
 
     def _shape(self):
-        return tuple(self._dataset.shape)
+        return self._dataset.shape
 
     def _get(self, indices):
         return _tensor_for_dataset(self._dataset[indices.numpy()])
+
+    def to(self, device: torch.device):
+        # The data will remain on disk until retrieved
+        pass
 
 
 class HDF5BackedDataset(Dataset):
@@ -51,16 +55,14 @@ class HDF5BackedDataset(Dataset):
 
         if all(isinstance(v, TensorData) for v in self.values()):
             # All data has been read into memory, so no need to keep file open
-            self.close_if_open()
+            self.close()
 
     def close(self):
-        assert self.using_file, 'No file to close'
-        self._file.close()
-        self._file = None
-
-    def close_if_open(self):
         if self.using_file:
-            self.close()
+            self._file.close()
+        else:
+            print('WARNING: No file to close')
+        self._file = None
 
     # Override because h5py expects indices in increasing order
     def sample(self, n, replace=False):

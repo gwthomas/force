@@ -1,47 +1,10 @@
 import random
 
 import torch
+import torch.nn as nn
 
-from force.nn import ConfigurableModule, MLP, MLPEnsemble
-
-
-class DiscreteQFunction(ConfigurableModule):
-    """Maps an observation to all actions' Q values"""
-    class Config(ConfigurableModule.Config):
-        mlp = MLP
-
-    def __init__(self, cfg, obs_shape, num_actions):
-        super().__init__(cfg)
-        output_shape = torch.Size([num_actions])
-        self.q = MLP(cfg.mlp, obs_shape, output_shape)
-        self._input_shape = obs_shape
-        self.num_actions = num_actions
-
-    def get_output_shape(self, input_shape):
-        return self.q.get_output_shape(input_shape)
-
-    def forward(self, state, **kwargs):
-        return self.q(state)
-
-
-class DiscreteQFunctionEnsemble(ConfigurableModule):
-    """Ensemble of functions which map observation to all Q values"""
-    class Config(ConfigurableModule.Config):
-        ensemble = MLPEnsemble
-
-    def __init__(self, cfg, obs_shape, num_actions):
-        super().__init__(cfg)
-        output_shape = torch.Size([num_actions])
-        self.ensemble = MLPEnsemble(cfg.ensemble, obs_shape, output_shape)
-        self._input_shape = obs_shape
-        self.num_actions = num_actions
-        self.num_models = cfg.ensemble.num_models
-
-    def get_output_shape(self, input_shape):
-        return self.ensemble.get_output_shape(input_shape, num_models=self.num_models)
-
-    def forward(self, obs, **kwargs):
-        return self.ensemble(obs, num_models=self.num_models)
+from force.nn import ConfigurableModule
+from force.nn.models import MLP
 
 
 def _get_input_shape(obs_shape, action_shape, goal_shape):
@@ -62,17 +25,19 @@ class GeneralValueFunction(ConfigurableModule):
     """
 
     class Config(ConfigurableModule.Config):
-        mlp = MLP
+        net = MLP.Config
 
-    def __init__(self, cfg, obs_shape, action_shape=None, goal_shape=None):
+    def __init__(self, cfg, obs_shape, action_shape=None, goal_shape=None,
+                 normalizer=None):
         super().__init__(cfg)
         self.obs_shape = obs_shape
         self.action_shape = action_shape
         self.goal_shape = goal_shape
+        self.normalizer = normalizer
 
         self._input_shape = _get_input_shape(obs_shape, action_shape, goal_shape)
-        output_shape = torch.Size([])   # scalar
-        self.net = MLP(cfg.mlp, self._input_shape, output_shape)
+        self._output_shape = torch.Size([])   # scalar
+        self.net = MLP(cfg.net, self._input_shape, self._output_shape)
 
     @property
     def is_action_conditioned(self):
@@ -82,12 +47,10 @@ class GeneralValueFunction(ConfigurableModule):
     def is_goal_conditioned(self):
         return self.goal_shape is not None
 
-    def get_output_shape(self, input_shape):
-        self.verify_input_shape(input_shape)
-        return self.net.get_output_shape(input_shape)
-
-    def forward(self, state, **kwargs):
-        return self.net(state)
+    def forward(self, obs, **kwargs):
+        if self.normalizer is not None:
+            obs = self.normalizer(obs)
+        return self.net(obs)
 
 
 class GeneralValueFunctionEnsemble(ConfigurableModule):
@@ -98,18 +61,23 @@ class GeneralValueFunctionEnsemble(ConfigurableModule):
     shape_relevant_kwarg_keys = {'which'}
 
     class Config(ConfigurableModule.Config):
-        ensemble = MLPEnsemble
+        net = MLP.Config
+        num_models = int
 
-    def __init__(self, cfg, obs_shape, action_shape=None, goal_shape=None):
+    def __init__(self, cfg, obs_shape, action_shape=None, goal_shape=None,
+                 normalizer=None):
         super().__init__(cfg)
         self.obs_shape = obs_shape
         self.action_shape = action_shape
         self.goal_shape = goal_shape
+        self.normalizer = normalizer
 
         self._input_shape = _get_input_shape(obs_shape, action_shape, goal_shape)
         output_shape = torch.Size([])   # scalar
-        self.ensemble = MLPEnsemble(cfg.ensemble, self._input_shape, output_shape)
-        self.num_models = cfg.ensemble.num_models
+        self.nets = nn.ModuleList([
+            MLP(cfg.net, self._input_shape, output_shape) for _ in range(cfg.num_models)
+        ])
+        self.num_models = cfg.num_models
 
     @property
     def is_action_conditioned(self):
@@ -120,58 +88,63 @@ class GeneralValueFunctionEnsemble(ConfigurableModule):
         return self.goal_shape is not None
 
     def _process_which(self, which, **kwargs):
-        if which == 'random':
+        if isinstance(which, tuple):
+            num_models = len(which)
+            model_indices = which
+        elif which == 'random':
             num_models = 1
             model_indices = [random.randrange(self.num_models)]
-        elif which.startswith('redq'):
-            num_models = int(which[4:])
-            model_indices = random.sample(range(self.num_models), num_models)
         else:
             # all will be used
             num_models = self.num_models
-            model_indices = None
-        new_kwargs = dict(kwargs, num_models=num_models, model_indices=model_indices)
-        return model_indices, new_kwargs
+            # model_indices = None
+            model_indices = list(range(num_models))
+        return dict(kwargs, num_models=num_models, model_indices=model_indices)
 
     def get_output_shape(self, input_shape, **kwargs):
         self.verify_input_shape(input_shape)
         which = kwargs.pop('which')
-        model_indices, new_kwargs = self._process_which(which)
-        num_models = self.num_models if model_indices is None else len(model_indices)
-        output_shape = self.ensemble.get_output_shape(input_shape, **new_kwargs)
-        assert output_shape == torch.Size([num_models])
-        if which in {'mean', 'min', 'random'} or which.startswith('redq'):
-            # Leave out dimension that indexes into ensemble's models
-            return output_shape[1:]
-        elif which == 'all':
+        new_kwargs = self._process_which(which)
+        output_shape = torch.Size([new_kwargs['num_models']])
+        if isinstance(which, tuple) or which == 'all':
             return output_shape
+        elif which in {'mean', 'min', 'random'}:
+            # First dimension (which indexes into models) will be reduced
+            return output_shape[1:]
         else:
             raise ValueError(f'Invalid ensemble option: {which}')
 
     def forward(self, input, **kwargs):
         """
         The `which` argument should be one of the following:
-          * "random" to randomly pick a model from the ensemble to use
-            for this forward pass
+          * a tuple of indices to directly specify which model(s) to use
+          * "random" to randomly pick a model from the ensemble
           * "all" to get the outputs of all models in the ensemble
           * "min" to compute the minimum of all models in the ensemble
           * "mean" to compute the average of all models in the ensemble
         """
+        if self.normalizer is not None:
+            input = self.normalizer(input)
+
         # Select which model(s) to use
         which = kwargs.pop('which')
-        model_indices, new_kwargs = self._process_which(which, **kwargs)
+        new_kwargs = self._process_which(which, **kwargs)
 
         # Batched forward passes
-        out = self.ensemble(input, **new_kwargs)
+        # out = self.ensemble(input, **new_kwargs)
+        out = torch.stack(
+            [self.nets[i](input) for i in new_kwargs['model_indices']],
+            dim=1
+        )
 
         # Reduction
         if which == 'random':
             out = out[:, 0]
-        elif which == 'min' or which.startswith('redq'):
+        elif which == 'min':
             out = out.min(1).values
         elif which == 'mean':
             out = out.mean(1)
-        elif which == 'all':
+        elif isinstance(which, tuple) or which == 'all':
             pass
         else:
             raise ValueError(f'Invalid ensemble option: {which}')

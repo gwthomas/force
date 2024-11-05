@@ -8,9 +8,9 @@ def hopper(next_state):
     height = next_state[:, 0]
     angle = next_state[:, 1]
     not_done = torch.isfinite(next_state).all(axis=-1) \
-               * torch.abs(next_state[:,1:] < 100).all(axis=-1) \
-               * (height > .7) \
-               * (torch.abs(angle) < .2)
+               * (torch.abs(next_state[:,1:]) < 100).all(axis=-1) \
+               * (height > 0.7) \
+               * (torch.abs(angle) < 0.2)
     done = ~not_done
     return done
 

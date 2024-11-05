@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
+import math
 
+from frozendict import frozendict
 import gymnasium as gym
 from gymnasium.spaces import Box, Discrete, Space
 import numpy as np
@@ -7,22 +9,23 @@ import torch
 import torch.nn as nn
 import torch.distributions as D
 
-from force.distributions import DiagonalGaussian, SquashedGaussian
-from force.nn import ConfigurableModule, MLP
-from force.nn.util import get_device, torchify
+from force.distributions import diagonal_gaussian
+from force.nn import ConfigurableModule
+from force.nn.models.mlp import MLP
+from force.nn.util import get_device, torchify, freepeat
 
 
-class BasePolicy(ABC):
+class Policy(ABC):
     @abstractmethod
-    def act(self, states, eval):
+    def act(self, obs, eval):
         raise NotImplementedError
 
-    def act1(self, state, eval):
+    def act1(self, obs, eval):
         with torch.no_grad():
-            return self.act(torch.unsqueeze(state, 0), eval)[0]
+            return self.act(torch.unsqueeze(obs, 0), eval)[0]
 
 
-class UniformPolicy(BasePolicy):
+class UniformPolicy(Policy):
     def __init__(self, env_or_action_space, device=None):
         if isinstance(env_or_action_space, gym.Env):
             action_space = env_or_action_space.action_space
@@ -44,8 +47,8 @@ class UniformPolicy(BasePolicy):
 
         self.device = get_device(device)
 
-    def act(self, states, eval):
-        batch_size = len(states)
+    def act(self, obs, eval):
+        batch_size = len(obs)
         if self.discrete:
             return torch.randint(self.n, size=(batch_size,), device=self.device)
         else:
@@ -65,8 +68,8 @@ class UniformPolicy(BasePolicy):
         return torch.log(self.prob(actions))
 
 
-class GaussianNoiseWrapper(BasePolicy):
-    def __init__(self, policy, std, noise_clip=0.5, action_clip=1.0):
+class GaussianNoiseWrapper(Policy):
+    def __init__(self, policy, std, noise_clip=0.5, action_clip=1):
         self.policy = policy
         self.std = std
         self.noise_clip = noise_clip
@@ -87,7 +90,7 @@ class GaussianNoiseWrapper(BasePolicy):
             )
 
 
-class MixturePolicy(BasePolicy):
+class MixturePolicy(Policy):
     def __init__(self, policies, probs=None):
         if probs is not None:
             assert sum(probs) == 1.
@@ -100,100 +103,138 @@ class MixturePolicy(BasePolicy):
         return self.policies[index].act(states, eval)
 
 
-class DeterministicPolicy(BasePolicy, ConfigurableModule):
+class NeuralPolicy(Policy, ConfigurableModule):
     class Config(ConfigurableModule.Config):
-        mlp = MLP
+        net = MLP.Config
 
-    def __init__(self, cfg, input_shape, output_shape, squash=True):
+    def __init__(self, cfg, input_shape, output_shape, final_activation=None):
         ConfigurableModule.__init__(self, cfg)
-        self.net = MLP(cfg.mlp, input_shape, output_shape,
-                       final_activation=('tanh' if squash else None))
-
-    def act(self, states, eval):
-        return self.net(states)
+        self.net = MLP(cfg.net, input_shape, output_shape,
+                       final_activation=final_activation)
 
 
-class StochasticPolicy(BasePolicy, ConfigurableModule):
+class DeterministicNeuralPolicy(NeuralPolicy):
+    def __init__(self, cfg, input_shape, action_shape, squash=True):
+        super().__init__(cfg, input_shape, action_shape,
+                         final_activation=('tanh' if squash else None))
+
+    def act(self, obs, eval):
+        return self.net(obs).clamp(-1, 1)
+
+
+class DistributionalNeuralPolicy(NeuralPolicy):
     use_special_eval = False
 
-    class Config(ConfigurableModule.Config):
-        mlp = MLP
-
-    def __init__(self, cfg, input_shape, output_shape):
-        ConfigurableModule.__init__(self, cfg)
-        self.net = MLP(cfg.mlp, input_shape, output_shape)
-
     @abstractmethod
-    def _distr(self, *network_outputs):
+    def _distribution(self, net_out):
+        """Construct a distribution from the output(s) of the network"""
         raise NotImplementedError
 
-    def distr(self, states):
-        return self._distr(self.net(states))
+    def distribution(self, obs):
+        return self._distribution(self.net(obs))
 
-    @abstractmethod
     def _special_eval(self, distr):
+        """Optionally override to implement e.g. deterministic eval.
+        Must set use_special_eval = True or this will not be called."""
         raise NotImplementedError
 
-    def act(self, states, eval):
-        distr = self.distr(states)
+    def act(self, obs, eval: bool):
+        distr = self.distribution(obs)
         if eval and self.use_special_eval:
             return self._special_eval(distr)
         else:
             return distr.sample()
 
 
-class BoltzmannPolicy(StochasticPolicy):
+class BoltzmannPolicy(DistributionalNeuralPolicy):
     use_special_eval = True
 
-    def _distr(self, logits):
-        return D.Categorical(logits=logits)
+    def __init__(self, cfg, input_shape, output_shape):
+        super().__init__(cfg, input_shape, output_shape)
+        self.temperature = 1
+
+    def _distribution(self, net_out):
+        return D.Categorical(logits=net_out/self.temperature)
 
     def _special_eval(self, distr):
         return distr.logits.argmax(dim=-1)
 
 
-class GaussianPolicy(StochasticPolicy):
-    class Config(StochasticPolicy.Config):
-        init_std = 0.1
+class GaussianPolicy(DistributionalNeuralPolicy):
+    class Config(DistributionalNeuralPolicy.Config):
+        use_state_dependent_std = False
+        init_std = 0.5
+        min_logstd = -20.0
+        max_logstd = 2.0
+        squash = False
 
     use_special_eval = True
 
-    def __init__(self, cfg, input_shape, action_dim):
-        output_shape = torch.Size([action_dim])
+    def __init__(self, cfg, input_shape, action_shape):
+        if cfg.use_state_dependent_std:
+            output_shape = frozendict({'mean': action_shape, 'logstd': action_shape})
+        else:
+            output_shape = action_shape
         super().__init__(cfg, input_shape, output_shape)
-        self.log_std = nn.Parameter(torch.full([action_dim], np.log(cfg.init_std)))
+
+        # Initialize log std
+        init_log_std = math.log(cfg.init_std)
+        if not cfg.use_state_dependent_std:
+            self.logstd = nn.Parameter(torch.full(action_shape, init_log_std))
+        else:
+            linear_layer = self.net[-2]
+            assert isinstance(linear_layer, nn.Linear)
+            linear_layer.bias.data[:] = init_log_std
+
+        self.last_pretanh = None
 
     def act(self, states, eval):
         actions = super().act(states, eval)
-        return torch.clamp(actions, -1, 1)
+        if self.cfg.squash:
+            # tanh ensures samples already in [-1,1]
+            return actions
+        else:
+            # The mean lies within [-1,1], but samples may have gone beyond the
+            # bounds, necessitating clipping.
+            return actions.clamp(-1, 1)
 
-    def _distr(self, net_out):
-        batch_size = net_out.shape[0]
-        std = self.log_std.exp().unsqueeze(0).expand(batch_size, -1)
-        return DiagonalGaussian(net_out, std)
-
-    def _special_eval(self, distr):
-        return distr.loc
-
-
-class SquashedGaussianPolicy(StochasticPolicy):
-    class Config(StochasticPolicy.Config):
-        logstd_min = -20.0
-        logstd_max = 2.0
-
-    use_special_eval = True
-
-    def __init__(self, cfg, input_shape, action_dim):
-        output_shape = torch.Size([action_dim*2])
-        super().__init__(cfg, input_shape, output_shape)
-
-    def _distr(self, net_out):
-        mu, logstd = net_out.chunk(2, dim=-1)
-
-        # constrain log_std inside (log_std_min, log_std_max)
+    def _distribution(self, net_out):
         cfg = self.cfg
-        logstd = cfg.logstd_min + (cfg.logstd_max - cfg.logstd_min) * torch.sigmoid(logstd)
-        return SquashedGaussian(mu, logstd.exp())
+        if cfg.use_state_dependent_std:
+            mean = net_out['mean']
+            logstd = net_out['logstd']
+            logstd = logstd.clamp(min=cfg.min_logstd, max=cfg.max_logstd)
+            std = torch.exp(logstd)
+        else:
+            mean = net_out
+            logstd = self.logstd
+            logstd.data.clamp_(min=cfg.min_logstd, max=cfg.max_logstd)
+            std = freepeat(torch.exp(logstd), mean.size(0), dim=0)
+
+        if cfg.squash:
+            self.last_pretanh = mean
+            mean = torch.tanh(mean)
+        return diagonal_gaussian(mean, std, squash=cfg.squash)
 
     def _special_eval(self, distr):
-        return distr.mean
+        return distr.mode
+
+
+class NormalizedTanhPolicy(NeuralPolicy):
+    class Config(NeuralPolicy.Config):
+        noise_std = 0.29
+
+    def act(self, obs, eval):
+        means = self.net(obs)
+
+        # Normalize
+        G = means.abs().mean(1, keepdim=True)
+        means = means / G.clamp(min=1)
+
+        # Optionally add Gaussian noise
+        if eval:
+            pretanh = means
+        else:
+            pretanh = means + self.cfg.noise_std * torch.randn_like(means)
+
+        return torch.tanh(pretanh)

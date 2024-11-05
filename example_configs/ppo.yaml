@@ -1,0 +1,18 @@
+algorithm: PPO
+updates_per_epoch: 10
+steps_per_update: 2048
+agent:
+  _tag: PPO
+  policy:
+    net:
+      hidden_dim: 64
+      activation: tanh
+  value_function:
+    net:
+      hidden_dim: 64
+      activation: tanh
+  optimizer:
+    algorithm: Adam
+    lr: 0.0003
+    kwargs:
+      eps: 0.00001

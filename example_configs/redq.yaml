@@ -1,0 +1,8 @@
+algorithm: REDQSOP
+updates_per_epoch: 1000
+agent:
+  _tag: REDQSOP
+  utd_ratio: 20
+  num_min: 2
+  critic:
+    num_models: 10
