@@ -1,13 +1,14 @@
+from typing import Callable
+
 import torch
 
 from force.data import TransitionBuffer
-from force.env import TorchWrapper
-from force.policies import Policy
+from force.env import BaseEnv as Env
 
 
 class Runner:
-    def __init__(self, env, log=None):
-        assert isinstance(env, TorchWrapper)
+    def __init__(self, env: Env, log=None):
+        assert isinstance(env, Env)
         self._env = env
         self.log = log
         self._samples_taken = 0
@@ -29,19 +30,17 @@ class Runner:
         self._t = 0
         self._total_reward = 0
 
-    def run(self, policy: Policy, num_steps: int, eval: bool = False):
+    def run(self, policy_fn: Callable, num_steps: int):
         # Create buffer in which to store the samples
         buffer = TransitionBuffer(
-            self._env.observation_space,
-            self._env.action_space,
+            self._env.info,
             capacity=num_steps,
             device=self._env.device
         )
 
         for _ in range(num_steps):
             with torch.no_grad():
-                action = policy.act1(self._last_obs, eval)
-                # print(actions[0].cpu().numpy())
+                action = policy_fn(self._last_obs.unsqueeze(0))[0]
             next_obs, reward, terminal, truncated, info = self._env.step(action)
             self._samples_taken += 1
             self._t += 1
@@ -57,7 +56,7 @@ class Runner:
             )
 
             if terminal or truncated:
-                self.log(f'Completed episode of length {self._t}, return {self._total_reward:.2f}')
+                # self.log(f'Completed episode of length {self._t}, return {self._total_reward:.2f}')
                 self._returns.append(self._total_reward)
                 self.reset()
             else:

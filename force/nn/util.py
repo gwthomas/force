@@ -1,3 +1,5 @@
+from typing import Callable
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -75,8 +77,8 @@ def numpyify(x):
 
 
 # Wrapper to hide modules from parent modules
-class ModuleWrapper:
-    def __init__(self, module):
+class HideModuleWrapper:
+    def __init__(self, module: nn.Module):
         self.module = module
 
     def __getattr__(self, attr):

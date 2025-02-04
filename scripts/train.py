@@ -2,14 +2,12 @@ import torch
 
 from force.alg import NAMED_ALGORITHMS
 from force.config import TaggedUnion, Field
-from force.defaults import DEVICE
 from force.experiment.rl import RLExperiment
 from force.nn.util import torchify, numpyify
 
 try:
     import d4rl
 except:
-    print('Failed to import D4RL')
     pass
 
 
@@ -29,30 +27,30 @@ class ExampleExperiment(RLExperiment):
             initial_data['truncateds'] = torch.zeros_like(initial_data['terminals'])
             return initial_data
         else:
-            return None
+            return super().get_initial_data()
 
     def create_agent(self):
         cfg = self.cfg
-        env_root = cfg.env.name.split('-')[0]
-        agent_kwargs = {'device': DEVICE}
+        env_root = cfg.env_name.split('-')[0]
 
         # Algorithm-dependent settings
-        if cfg.algorithm == 'MBPO':
+        agent_kwargs = {'device': self.device}
+        alg_name = cfg.agent._tag
+        if alg_name == 'MBPO':
             from force.env.mujoco.termination_functions import TERMINATION_FUNCTIONS
             agent_kwargs['termination_fn'] = TERMINATION_FUNCTIONS[env_root]
-        if cfg.algorithm in {'MBPO', 'REDQ'}:
+        if alg_name in {'MBPO', 'REDQ'}:
             from force.alg.mbpo import MUJOCO_TARGET_ENTROPIES
-            if cfg.algorithm == 'REDQ':
+            if alg_name == 'REDQ':
                 agent_cfg = cfg.agent
             else:
                 agent_cfg = cfg.agent.solver
             agent_cfg.target_entropy = MUJOCO_TARGET_ENTROPIES[env_root]
 
-        return NAMED_ALGORITHMS[cfg.algorithm](
-            cfg.agent, self.observation_space, self.action_space,
-            **agent_kwargs
-        )
+        alg_class = NAMED_ALGORITHMS[alg_name]
+        return alg_class(cfg.agent, self.env.info, **agent_kwargs)
 
 
 if __name__ == '__main__':
+    torch.multiprocessing.set_start_method('spawn')
     ExampleExperiment.main()

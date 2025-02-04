@@ -3,7 +3,6 @@ import torch.nn as nn
 
 from force.alg.actor_critic import BufferedActorCritic
 from force.config import Field, Choice
-from force.env.util import space_shape
 from force.nn import Optimizer
 from force.nn.util import get_device, torchify, batch_map, update_ema
 from force.nn.shape import shape_numel
@@ -19,15 +18,13 @@ class SAC(BufferedActorCritic):
         use_log_alpha_loss = True
         deterministic_backup = False
 
-    def __init__(self, cfg, obs_space, act_space,
+    def __init__(self, cfg, env_info,
                  actor=None, device=None):
-        obs_shape = space_shape(obs_space)
-        act_shape = space_shape(act_space)
         if actor is None:
-            actor = GaussianPolicy(cfg.actor, obs_shape, act_shape)
+            actor = GaussianPolicy(cfg.actor, env_info)
 
-        super().__init__(cfg, obs_space, act_space, actor,
-                         use_actor_target=False, use_critic_target=True,
+        super().__init__(cfg, env_info, actor,
+                         use_target_actor=False, use_target_critic=True,
                          device=device)
 
         self.log_alpha = torch.tensor(cfg.init_alpha, device=self.device).log()
@@ -39,7 +36,7 @@ class SAC(BufferedActorCritic):
 
         # Check if policy can compute exact entropy
         try:
-            rand_obs = torchify(obs_space.sample()).unsqueeze(0)
+            rand_obs = torchify(env_info.observation_space.sample()).unsqueeze(0)
             with torch.no_grad():
                 self.actor.distribution(rand_obs).entropy()
             self.exact_entropy = True
@@ -50,11 +47,10 @@ class SAC(BufferedActorCritic):
     def alpha(self):
         return torch.exp(self.log_alpha)
 
-    def compute_value(self, obs, use_target_network: bool):
-        critic = self.critic_target if use_target_network else self.critic
+    def compute_target_value(self, obs):
         distr = self.actor.distribution(obs)
         action = distr.rsample()
-        value = critic([obs, action], which='min')
+        value = self.target_critic([obs, action], which='min')
         if not self.cfg.deterministic_backup:
             if self.exact_entropy:
                 entropy = distr.entropy()

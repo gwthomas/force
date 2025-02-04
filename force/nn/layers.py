@@ -1,6 +1,3 @@
-import math
-
-from frozendict import frozendict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,12 +8,12 @@ from force.nn.shape import shape2str
 
 def cat_dims(input_shape, dim=-1):
     assert dim == -1, 'Currently only dim=-1 is supported, but that may change'
-    if isinstance(input_shape, tuple):
+    if isinstance(input_shape, list):
         shape_list = list(input_shape)
-    elif isinstance(input_shape, frozendict):
+    elif isinstance(input_shape, dict):
         shape_list = list(input_shape.values())
     else:
-        raise ValueError('cat_dims expects complex shape (tuple or frozendict of Sizes)')
+        raise ValueError('cat_dims expects complex shape (list or dict of Sizes)')
     other_dims = shape_list[0][:-1]
     total_dim = 0
     for shape in shape_list:
@@ -28,7 +25,7 @@ def cat_dims(input_shape, dim=-1):
 class Cat(Module):
     """Concatenates inputs along their final dimension"""
     def __init__(self, input_shape, dim=-1):
-        assert type(input_shape) in {tuple, frozendict}
+        assert type(input_shape) in {list, dict}
         super().__init__()
         self._input_shape = input_shape
         self._output_shape = cat_dims(input_shape, dim=dim)
@@ -58,21 +55,21 @@ class Split(Module):
         self._input_shape = cat_dims(output_shape, dim=dim)
         self._output_shape = output_shape
         self.dim = dim
-        if isinstance(output_shape, tuple):
+        if isinstance(output_shape, list):
             self._split_sizes = [s[dim] for s in output_shape]
-        elif isinstance(output_shape, frozendict):
+        elif isinstance(output_shape, dict):
             self._split_sizes = [s[dim] for s in output_shape.values()]
         else:
-            raise ValueError('Split output shape should be tuple or frozendict')
+            raise ValueError('Split output shape should be list or dict')
 
     def forward(self, input, **kwargs):
         split = input.split(self._split_sizes, dim=self.dim)
-        if isinstance(self._output_shape, tuple):
+        if isinstance(self._output_shape, list):
             return split
-        elif isinstance(self._output_shape, frozendict):
+        elif isinstance(self._output_shape, dict):
             return dict(zip(self._output_shape.keys(), split))
         else:
-            raise ValueError('Split output shape should be tuple or frozendict')
+            raise ValueError('Split output shape should be list or dict')
 
     def extra_repr(self):
         return f'{shape2str(self._input_shape)} -> {shape2str(self._output_shape)}'

@@ -9,12 +9,11 @@ class REDQSAC(SAC):
         utd_ratio = 20  # G
         num_min = 2     # M
 
-    def compute_value(self, obs, use_target_network):
-        critic = self.critic_target if use_target_network else self.critic
+    def compute_target_value(self, obs):
         distr = self.actor.distribution(obs)
         action = distr.sample()
-        indices = random.sample(range(critic.num_models), self.cfg.M)
-        value = critic([obs, action], which=tuple(indices)).min(1).values
+        indices = random.sample(range(self.target_critic.num_models), self.cfg.M)
+        value = self.target_critic([obs, action], which=tuple(indices)).min(1).values
         if not self.cfg.deterministic_backup:
             value = value - self.alpha * distr.log_prob(action)
         return value
@@ -35,11 +34,10 @@ class REDQSOP(SOP):
         utd_ratio = 20  # G
         num_min = 2     # M
 
-    def compute_value(self, obs, use_target_network):
-        critic = self.critic_target if use_target_network else self.critic
+    def compute_target_value(self, obs):
         noisy_actions = self.actor.act(obs, eval=False)
-        indices = random.sample(range(critic.num_models), self.cfg.num_min)
-        return critic([obs, noisy_actions], which=tuple(indices)).min(1).values
+        indices = random.sample(range(self.target_critic.num_models), self.cfg.num_min)
+        return self.target_critic([obs, noisy_actions], which=tuple(indices)).min(1).values
 
     def _update(self, counters: dict):
         # Update critic ensemble G times

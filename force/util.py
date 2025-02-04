@@ -1,14 +1,13 @@
 from contextlib import contextmanager
 from datetime import datetime
 import os
+import queue
 from pathlib import Path
 import random
 import string
 
 import numpy as np
 import torch
-
-from force import defaults
 
 
 def set_seed(seed):
@@ -85,13 +84,14 @@ def update_cfgd(dst: dict, src: dict):
 
 
 def unique_value(name):
-    """Creates a unique value with the given name.
-    The value has its own class, of which it is the only instance."""
+    """Creates a unique value with the given name. The value has its own class."""
     class UniqueClass:
         def __str__(self):
             return name
         def __repr__(self):
             return name
+        def __eq__(self, other):
+            return self is other
     UniqueClass.__name__ = name
     return UniqueClass()
 
@@ -99,12 +99,24 @@ def unique_value(name):
 def dict_get(dict, *args):
     return (dict[key] for key in args)
 
-def prefix_dict_keys(prefix: str, new: dict):
-    return {f'{prefix}/{k}': v for k, v in new.items()}
+def prefix_dict_keys(prefix: str, d: dict):
+    return {f'{prefix}/{k}': v for k, v in d.items()}
 
+def stats_dict(values):
+    if isinstance(values, list):
+        values = torch.tensor(values)
+    assert isinstance(values, torch.Tensor)
+    values_float = values.float()
+    return {
+        'mean': values_float.mean().item(),
+        'min': values.min().item(),
+        'max': values.max().item(),
+        'std': values_float.std().item()
+    }
 
 def discounted_sum(rewards, discount):
-    exp_discounts = discount**torch.arange(len(rewards), dtype=torch.float, device=rewards.device)
+    timesteps = torch.arange(len(rewards), dtype=torch.float, device=rewards.device)
+    exp_discounts = discount**timesteps
     return torch.sum(rewards * exp_discounts)
 
 
@@ -158,3 +170,10 @@ def compute_returns(rewards, discount):
     for t in reversed(range(T-1)):
         returns[t] = rewards[t] + discount * returns[t+1]
     return returns
+
+
+def queue_safe_get(q, timeout: float | None = None):
+    try:
+        return q.get(timeout=timeout)
+    except queue.Empty:
+        return None

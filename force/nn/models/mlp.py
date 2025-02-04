@@ -1,5 +1,3 @@
-from frozendict import frozendict
-
 import torch
 from force import defaults
 from force.config import BaseConfig, Configurable, Field
@@ -54,7 +52,7 @@ class MLP(Configurable, Sequential):
         # Possibly add layer that reshapes output
         if output_shape == torch.Size([]):
             layers.append(Squeeze())
-        elif type(output_shape) in {tuple, frozendict}:
+        elif type(output_shape) in {list, dict}:
             layers.append(Split(output_shape))
 
         Sequential.__init__(self, *layers)

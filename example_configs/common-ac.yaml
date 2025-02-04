@@ -1,7 +1,7 @@
 initial_steps: 5000
 num_epochs: 100
-updates_per_epoch: 5000
-steps_per_update: 1
+trains_per_epoch: 1000
+steps_per_train: 1
 num_eval_episodes: 10
 agent:
   actor:

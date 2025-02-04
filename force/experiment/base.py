@@ -11,13 +11,11 @@ import traceback
 from torch.utils.tensorboard import SummaryWriter
 
 from force.defaults import DATETIME_FORMAT, TORCH_NUM_THREADS, MAX_SEED
-from force.config import BaseConfig, Configurable, Field
+from force.config import Configurable, Optional
+from force.parallel.jobs import JobManager
 from force.log import Log, set_global_log
+from force.nn.util import get_device
 from force.util import set_seed, random_string, load_configd, update_cfgd, try_parse, time_since
-
-
-def get_root_dir():
-    return Path(os.environ['FORCE_ROOT_DIR'])
 
 
 class Experiment(ABC, Configurable):
@@ -25,41 +23,49 @@ class Experiment(ABC, Configurable):
     The intended usage is to subclass Experiment, defining a Config class
     (which should subclass Experiment.Config) and overriding the run() method.
     """
-    class Config(BaseConfig):
-        project = str
-        domain = str
-        algorithm = str
-        run_id = Field(str, required=False)
-        seed = Field(int, required=False)
+    class Config(Configurable.Config):
+        project_dir = Optional(str)
+        run_id = Optional(str)
+        seed = Optional(int)
+        device = Optional(str)
         debug = False
 
     def __init__(self, cfg):
         Configurable.__init__(self, cfg)
 
         # Set up directory and logs
-        parent_dir = get_root_dir()/cfg.project/'logs'/cfg.domain/cfg.algorithm
-        parent_dir.mkdir(exist_ok=True, parents=True)
-        self.log_dir = parent_dir/cfg.run_id
-        if self.log_dir.is_dir() and cfg.debug:
+        if cfg.project_dir is None:
+            cfg.project_dir = os.getcwd()
+        project_dir = Path(cfg.project_dir)
+        project_log_dir = project_dir/'logs'
+        project_log_dir.mkdir(exist_ok=True, parents=True)
+        self._log_dir = project_log_dir/cfg.run_id
+        if self._log_dir.is_dir() and cfg.debug:
             print('Deleting existing log dir')
-            shutil.rmtree(self.log_dir)
-        self.log_dir.mkdir(exist_ok=True)
-        self.log = Log(self.log_dir/'log.txt')
-        set_global_log(self.log)
-        self.summary_writer = SummaryWriter(log_dir=self.log_dir)
+            shutil.rmtree(self._log_dir)
+        self._log_dir.mkdir(exist_ok=True)
+        self._log = Log(self._log_dir/'log.txt')
+        self.log(f'Log dir: {self._log_dir}')
+        set_global_log(self._log)
+        self._summary_writer = SummaryWriter(log_dir=self._log_dir)
 
         # Dump config to file
-        config_path = self.log_dir/'config.yaml'
+        config_path = self._log_dir/'config.yaml'
         config_path.write_text(cfg.to_yaml())
-        self.log(f'Wrote config to {config_path}')
 
-        # Set up SIGTERM callback
-        signal.signal(signal.SIGTERM, lambda signal, frame: self._write_status(f'KILLED (SIGTERM)'))
+        # Device
+        self.device = get_device(cfg.device)
+
+        # Job manager
+        self.job_manager = JobManager(self._log)
+
+    def log(self, msg: str):
+        self._log.write(msg)
 
     def _write_status(self, status: str):
         assert isinstance(status, str)
-        assert self.log_dir.is_dir()
-        (self.log_dir/'status.txt').write_text(status)
+        assert self._log_dir.is_dir()
+        (self._log_dir/'status.txt').write_text(status)
         self.log(status)
 
     @abstractmethod
@@ -68,12 +74,11 @@ class Experiment(ABC, Configurable):
 
     # This can be overridden, but don't forget to call super().cleanup()
     def cleanup(self):
-        self.log.close()
-        self.summary_writer.close()
+        self._log.close()
+        self._summary_writer.close()
 
     def managed_run(self):
         start_t = datetime.now()
-
         self._write_status('STARTED')
 
         try:
@@ -126,7 +131,6 @@ class Experiment(ABC, Configurable):
         debug = args.debug
         if debug:
             cfg.set('debug', True)
-            cfg.set('project', 'debug')
 
         if cfg.get('run_id') is None:
             if debug:

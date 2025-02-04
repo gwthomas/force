@@ -1,11 +1,10 @@
-from frozendict import frozendict
 import random
 
 import torch
-import torch.nn as nn
+from torch import nn, Size
 import torch.nn.functional as F
 
-from force.env.util import space_dim, is_standard_box
+from force.env.base import is_standard_box
 from force.nn import ConfigurableModule, Optimizer
 from force.nn.models.transformer import DecoderOnlyTransformer
 from force.nn.util import get_device, freepeat, torchify
@@ -55,11 +54,11 @@ class DecisionTransformer(ConfigurableModule):
         optimizer = Optimizer.Config
         grad_norm_clip = 0.25
 
-    def __init__(self, cfg, obs_space, act_space, device=None):
+    def __init__(self, cfg, env_info, device=None):
         assert cfg.transformer.layer.num_heads == 1, 'Currently only single head supported'
         super().__init__(cfg)
-        obs_dim = space_dim(obs_space)
-        act_dim = space_dim(act_space)
+        obs_dim = env_info.observation_shape.numel()
+        act_dim = env_info.action_shape.numel()
         device = get_device(device)
         self.embed_dim = embed_dim = cfg.transformer.dim_model
         self.zero_action = torch.zeros_like(torchify(act_space.sample(), device=device))
@@ -68,14 +67,14 @@ class DecisionTransformer(ConfigurableModule):
         self.total_seq_len = NUM_COMPONENTS * H
 
         # Specify input and output shapes
-        self._input_shape = frozendict({
-            'rtgs': torch.Size([H]),
-            'observations': torch.Size([H, obs_dim]),
-            'actions': torch.Size([H, act_dim]),
-            'timesteps': torch.Size([H]),
-            'masks': torch.Size([H])
-        })
-        self._output_shape = torch.Size([H, act_dim])
+        self._input_shape = {
+            'rtgs': Size([H]),
+            'observations': Size([H, obs_dim]),
+            'actions': Size([H, act_dim]),
+            'timesteps': Size([H]),
+            'masks': Size([H])
+        }
+        self._output_shape = Size([H, act_dim])
 
         # Instantiate model components
         self.rtg_encoder = nn.Linear(1, embed_dim)

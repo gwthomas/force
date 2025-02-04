@@ -1,4 +1,3 @@
-algorithm: TD3
 agent:
   _tag: TD3
   actor_optimizer:

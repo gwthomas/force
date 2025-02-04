@@ -1,45 +1,56 @@
 from abc import ABC, abstractmethod
+from enum import Enum
+from functools import partial
 import math
+from typing import Callable
 
-from frozendict import frozendict
 import gymnasium as gym
-from gymnasium.spaces import Box, Discrete, Space
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.distributions as D
 
 from force.distributions import diagonal_gaussian
+from force.env.base import is_box, is_discrete
 from force.nn import ConfigurableModule
 from force.nn.models.mlp import MLP
 from force.nn.util import get_device, torchify, freepeat
+from force.types import Observation, Action, PolicyFunction
 
 
-class Policy(ABC):
+class PolicyMode(Enum):
+    EXPLORE = 1
+    EVAL = 2
+    INFO = 3    # for debugging, visualization, etc.
+
+
+class BasePolicy(ABC):
+    """Base class for policies, especially those implemented as modules."""
     @abstractmethod
-    def act(self, obs, eval):
+    def act(self, obs: Observation, mode: PolicyMode) -> Action:
         raise NotImplementedError
+    
+    def functional(self, mode: PolicyMode) -> PolicyFunction:
+        return partial(self.act, mode=mode)
 
-    def act1(self, obs, eval):
-        with torch.no_grad():
-            return self.act(torch.unsqueeze(obs, 0), eval)[0]
 
+class UnsupportedPolicyMode(Exception):
+    def __init__(self, policy: BasePolicy, mode: PolicyMode):
+        self.policy_class = policy.__class__
+        self.mode = mode
 
-class UniformPolicy(Policy):
-    def __init__(self, env_or_action_space, device=None):
-        if isinstance(env_or_action_space, gym.Env):
-            action_space = env_or_action_space.action_space
-        elif isinstance(env_or_action_space, gym.Space):
-            action_space = env_or_action_space
-        else:
-            raise ValueError('Must pass env or action space')
+    def __str__(self):
+        return f"Policy of type {self.policy_class} does not support mode {self.mode}"
+    
 
-        if isinstance(action_space, Box):
+class UniformPolicy(BasePolicy):
+    def __init__(self, action_space, device=None):
+        if is_box(action_space):
             self.discrete = False
             self.low = torchify(action_space.low, device=device)
             self.high = torchify(action_space.high, device=device)
             self.shape = tuple(action_space.shape)
-        elif isinstance(action_space, Discrete):
+        elif is_discrete(action_space):
             self.discrete = True
             self.n = action_space.n
         else:
@@ -47,7 +58,7 @@ class UniformPolicy(Policy):
 
         self.device = get_device(device)
 
-    def act(self, obs, eval):
+    def act(self, obs, mode: PolicyMode):
         batch_size = len(obs)
         if self.discrete:
             return torch.randint(self.n, size=(batch_size,), device=self.device)
@@ -68,16 +79,17 @@ class UniformPolicy(Policy):
         return torch.log(self.prob(actions))
 
 
-class GaussianNoiseWrapper(Policy):
-    def __init__(self, policy, std, noise_clip=0.5, action_clip=1):
+class GaussianNoiseWrapper(BasePolicy):
+    def __init__(self, policy: BasePolicy, std: float,
+                 noise_clip: float = 0.5, action_clip: float = 1.0):
         self.policy = policy
         self.std = std
         self.noise_clip = noise_clip
         self.action_clip = action_clip
 
-    def act(self, states, eval):
-        noiseless_actions = self.policy.act(states, eval)
-        if eval:
+    def act(self, obs: Observation, mode: PolicyMode):
+        noiseless_actions = self.policy.act(obs, eval)
+        if mode == PolicyMode.EVAL:
             return noiseless_actions
         else:
             noise = torch.clamp(
@@ -90,20 +102,20 @@ class GaussianNoiseWrapper(Policy):
             )
 
 
-class MixturePolicy(Policy):
-    def __init__(self, policies, probs=None):
+class MixturePolicy(BasePolicy):
+    def __init__(self, policies: list[BasePolicy], probs=None):
         if probs is not None:
             assert sum(probs) == 1.
             assert len(policies) == len(probs)
         self.policies = policies
         self.probs = probs
 
-    def act(self, states, eval):
+    def act(self, obs: Observation, mode: PolicyMode):
         index = np.random.choice(len(self.policies), p=self.probs)
-        return self.policies[index].act(states, eval)
+        return self.policies[index].act(obs, mode)
 
 
-class NeuralPolicy(Policy, ConfigurableModule):
+class NeuralPolicy(BasePolicy, ConfigurableModule):
     class Config(ConfigurableModule.Config):
         net = MLP.Config
 
@@ -118,7 +130,7 @@ class DeterministicNeuralPolicy(NeuralPolicy):
         super().__init__(cfg, input_shape, action_shape,
                          final_activation=('tanh' if squash else None))
 
-    def act(self, obs, eval):
+    def act(self, obs, mode: PolicyMode):
         return self.net(obs).clamp(-1, 1)
 
 
@@ -138,9 +150,9 @@ class DistributionalNeuralPolicy(NeuralPolicy):
         Must set use_special_eval = True or this will not be called."""
         raise NotImplementedError
 
-    def act(self, obs, eval: bool):
+    def act(self, obs, mode: PolicyMode):
         distr = self.distribution(obs)
-        if eval and self.use_special_eval:
+        if mode == PolicyMode.EVAL and self.use_special_eval:
             return self._special_eval(distr)
         else:
             return distr.sample()
@@ -172,7 +184,7 @@ class GaussianPolicy(DistributionalNeuralPolicy):
 
     def __init__(self, cfg, input_shape, action_shape):
         if cfg.use_state_dependent_std:
-            output_shape = frozendict({'mean': action_shape, 'logstd': action_shape})
+            output_shape = {'mean': action_shape, 'logstd': action_shape}
         else:
             output_shape = action_shape
         super().__init__(cfg, input_shape, output_shape)
@@ -224,7 +236,7 @@ class NormalizedTanhPolicy(NeuralPolicy):
     class Config(NeuralPolicy.Config):
         noise_std = 0.29
 
-    def act(self, obs, eval):
+    def act(self, obs, mode: PolicyMode, noise_std=None):
         means = self.net(obs)
 
         # Normalize
@@ -232,9 +244,11 @@ class NormalizedTanhPolicy(NeuralPolicy):
         means = means / G.clamp(min=1)
 
         # Optionally add Gaussian noise
-        if eval:
-            pretanh = means
-        else:
-            pretanh = means + self.cfg.noise_std * torch.randn_like(means)
-
-        return torch.tanh(pretanh)
+        if noise_std is None:
+            if mode == PolicyMode.EVAL:
+                noise_std = 0
+            else:
+                noise_std = self.cfg.noise_std
+        assert noise_std >= 0
+        
+        return torch.tanh(means + noise_std * torch.randn_like(means))

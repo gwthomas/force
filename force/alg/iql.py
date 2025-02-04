@@ -3,7 +3,6 @@ import torch.nn.functional as F
 
 from force.alg.actor_critic import BufferedActorCritic
 from force.defaults import NUMERICAL_EPSILON
-from force.env.util import space_dim, space_shape
 from force.nn import Optimizer
 from force.nn.models.value_functions import ValueFunction
 from force.nn.util import get_device
@@ -24,30 +23,25 @@ class IQL(BufferedActorCritic):
         vf = ValueFunction.Config
         vf_optimizer = Optimizer.Config
 
-    def __init__(self, cfg, obs_space, act_space,
-                 actor=None,
-                 device=None):
-        obs_shape = space_shape(obs_space)
-        act_shape = space_shape(act_space)
-        device = get_device(device)
+    def __init__(self, cfg, env_info, actor=None, device=None):
         if actor is None:
-            actor = GaussianPolicy(cfg.actor, obs_shape, act_shape)
-        super().__init__(cfg, obs_space, act_space, actor,
-                         use_actor_target=False, use_critic_target=True,
+            actor = GaussianPolicy(cfg.actor, env_info)
+        device = get_device(device)
+        super().__init__(cfg, env_info, actor,
+                         use_target_actor=False, use_target_critic=True,
                          device=device)
 
-        self.vf = ValueFunction(cfg.vf, obs_shape).to(self.device)
+        self.vf = ValueFunction(cfg.vf, env_info.action_shape).to(self.device)
         self.vf_optimizer = Optimizer(cfg.vf_optimizer, self.vf.parameters())
 
-    def compute_value(self, obs, use_target_network):
-        assert not use_target_network
+    def compute_target_value(self, obs):
         return self.vf(obs)
 
     def update_with_batch(self, batch: dict, counters: dict):
         obs, actions, next_obs, rewards, terminals, _ = dict_get(batch, *batch.keys())
 
         with torch.no_grad():
-            target_q = self.critic_target([obs, actions], which='min')
+            target_q = self.target_critic([obs, actions], which='min')
             next_v = self.vf(next_obs)
 
         # Value function

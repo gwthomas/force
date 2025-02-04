@@ -1,6 +1,5 @@
 from force.alg.actor_critic import BufferedActorCritic
 from force.config import Configurable, BaseConfig, Field
-from force.env.util import space_shape
 from force.policies import NormalizedTanhPolicy
 
 
@@ -14,16 +13,16 @@ class SOP(BufferedActorCritic):
     class Config(BufferedActorCritic.Config):
         actor = NormalizedTanhPolicy.Config
 
-    def __init__(self, cfg, obs_space, act_space,
+    def __init__(self, cfg, env_info,
                  actor=None, device=None):
         Configurable.__init__(self, cfg)
-        obs_shape = space_shape(obs_space)
-        act_shape = space_shape(act_space)
         if actor is None:
-            actor = NormalizedTanhPolicy(cfg.actor, obs_shape, act_shape)
+            actor = NormalizedTanhPolicy(
+                cfg.actor, env_info.observation_shape, env_info.action_shape
+            )
 
         super().__init__(
-            cfg, obs_space, act_space, actor,
-            use_actor_target=False, use_critic_target=True,
+            cfg, env_info, actor,
+            use_target_actor=False, use_target_critic=True,
             device=device
         )

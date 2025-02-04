@@ -36,19 +36,19 @@ class MBPO(BufferedAgent):
         model_retain_epochs = 1
         real_frac = 0.1
 
-    def __init__(self, cfg, obs_space, act_space,
+    def __init__(self, cfg, env_info,
                  solver=None,
                  device=None,
                  termination_fn=None):
         assert cfg.num_elites <= cfg.model_ensemble.num_models
         assert 0 < cfg.real_frac < 1
-        super().__init__(cfg, obs_space, act_space, device=device)
+        super().__init__(cfg, env_info, device=device)
 
         if solver is None:
-            solver = SAC(cfg.solver, obs_space, act_space, device=self.device)
+            solver = SAC(cfg.solver, env_info, device=self.device)
         self.solver = solver
         self.model_ensemble = GaussianDynamicsEnsemble(
-            cfg.model_ensemble, obs_space, act_space,
+            cfg.model_ensemble, env_info,
             device=self.device, termination_fn=termination_fn
         )
 
@@ -167,7 +167,7 @@ class MBPO(BufferedAgent):
         if mb_buffer.capacity != new_capacity:
             self.log(f'Updating model buffer: {mb_buffer.capacity} -> {new_capacity}')
             samples = mb_buffer.get(as_dict=True)
-            new_buffer = TransitionBuffer(self.obs_space, self.act_space, new_capacity,
+            new_buffer = TransitionBuffer(self.env_info, new_capacity,
                                           device=mb_buffer.device)
             new_buffer.extend(**samples)
             assert len(mb_buffer) == len(new_buffer)

@@ -58,8 +58,16 @@ class Field:
         return s + ')'
 
 
+class Optional(Field):
+    """Convenience class that allows for an optional, i.e. non-required,
+    hyperparameter. Will resolve to None if no value is provided."""
+    def __init__(self, dtype: type):
+        assert isinstance(dtype, type)
+        super().__init__(dtype, required=False)
+
+
 class Choice(Field):
-    """Field that allows selection from a finite set of options.
+    """Allows selection from a fixed set of options.
     A default may be specified. If not, a value is required.
     """
     def __init__(self, options, default=None):
@@ -107,6 +115,7 @@ class TaggedUnion:
         tag = d.pop(TAG_KEY)
         cfg = self.possible_configs[tag]()
         cfg.update(d)
+        setattr(cfg, "_tag", tag)
         return cfg
 
 
@@ -197,6 +206,8 @@ class BaseConfig:
             self._set_polymorphic(k, v)
 
     def resolve(self):
+        assert not self.is_resolved()
+
         for k in self._field_keys:
             field = getattr(self, k)
             try:

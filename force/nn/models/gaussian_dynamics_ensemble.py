@@ -1,14 +1,12 @@
 import random
 
-from frozendict import frozendict
 import torch
-import torch.nn as nn
+from torch import nn, Size
 import torch.nn.functional as F
 import torch.distributions as D
 
 from force import defaults
 from force.config import BaseConfig
-from force.env.util import space_dim
 from force.distributions import diagonal_gaussian
 from force.nn import ConfigurableModule, Optimizer
 from force.nn.models import MLP
@@ -17,8 +15,6 @@ from force.nn.util import get_device, torchify, batch_iterator, freepeat, keywis
 
 
 class GaussianDynamicsEnsemble(ConfigurableModule):
-    shape_relevant_kwarg_keys = {'num_models'}
-
     class Config(BaseConfig):
         net = MLP.Config
         num_models = int
@@ -26,19 +22,19 @@ class GaussianDynamicsEnsemble(ConfigurableModule):
         batch_size = defaults.BATCH_SIZE
         std_bound_loss_weight = 0.01
 
-    def __init__(self, cfg, obs_space, act_space,
+    def __init__(self, cfg, env_info,
                  device=None, termination_fn=None):
         ConfigurableModule.__init__(self, cfg, device=device)
 
         self.termination_fn = termination_fn
 
         # Determine dimensions
-        self.state_dim = state_dim = space_dim(obs_space)
-        self.action_dim = action_dim = space_dim(act_space)
-        state_shape = torch.Size([state_dim])
-        act_shape = torch.Size([action_dim])
+        obs_shape = env_info.observation_shape
+        act_shape = env_info.action_shape
+        self.state_dim = obs_shape.numel()
+        self.action_dim = act_shape.numel()
         # 2x because we predict both mean and (log)std for obs and reward
-        out_shape = torch.Size([2 * (state_dim + 1)])
+        out_shape = torch.Size([2 * (self.state_dim + 1)])
 
         # State will be normalized before passing to model
         self.normalizer = Normalizer(state_shape, device=self.device)
@@ -64,14 +60,14 @@ class GaussianDynamicsEnsemble(ConfigurableModule):
     def get_output_shape(self, input_shape, **kwargs):
         num_models = kwargs['num_models']
         assert num_models <= self.cfg.num_models
-        assert input_shape == (torch.Size([num_models, self.state_dim]),
-                               torch.Size([num_models, self.action_dim]))
-        return frozendict(
-            next_state_mean=torch.Size([num_models, self.state_dim]),
-            next_state_std=torch.Size([num_models, self.state_dim]),
-            reward_mean=torch.Size([num_models]),
-            reward_std=torch.Size([num_models])
-        )
+        assert input_shape == (Size([num_models, self.state_dim]),
+                               Size([num_models, self.action_dim]))
+        return {
+            'next_state_mean': Size([num_models, self.state_dim]),
+            'next_state_std': Size([num_models, self.state_dim]),
+            'reward_mean': Size([num_models]),
+            'reward_std': Size([num_models])
+        }
 
     def forward(self, inputs, **kwargs):
         states, actions = inputs

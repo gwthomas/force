@@ -1,7 +1,6 @@
 import gymnasium as gym
 
-from .torch_wrapper import TorchWrapper, TorchVectorWrapper
-from .util import EnvConfig, VectorEnvConfig, get_env
+from .base import BaseEnv, GymEnv
 
 
 # Register modified envs

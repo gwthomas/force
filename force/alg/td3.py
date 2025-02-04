@@ -1,7 +1,8 @@
 from force.alg.actor_critic import BufferedActorCritic
-from force.config import Configurable, BaseConfig, Field
-from force.env.util import space_shape
-from force.policies import DeterministicNeuralPolicy, GaussianNoiseWrapper
+from force.policies import (
+    PolicyMode, UnsupportedPolicyMode,
+    DeterministicNeuralPolicy, GaussianNoiseWrapper
+)
 
 
 class TD3(BufferedActorCritic):
@@ -12,37 +13,35 @@ class TD3(BufferedActorCritic):
         noise_clip = 0.5
         delay = 2
 
-    def __init__(self, cfg, obs_space, act_space,
+    def __init__(self, cfg, env_info,
                  actor=None, device=None):
-        Configurable.__init__(self, cfg)
-        obs_shape = space_shape(obs_space)
-        act_shape = space_shape(act_space)
         if actor is None:
-            actor = DeterministicNeuralPolicy(cfg.actor, obs_shape, act_shape)
+            actor = DeterministicNeuralPolicy(
+                cfg.actor, env_info.observation_shape, env_info.action_shape
+            )
 
         super().__init__(
-            cfg, obs_space, act_space, actor,
-            use_actor_target=True, use_critic_target=True,
+            cfg, env_info, actor,
+            use_target_actor=True, use_target_critic=True,
             device=device
         )
 
         # Noisy versions of the policy for exploration and smoothing
-        self.explore_policy = GaussianNoiseWrapper(
+        self.acting_policy = GaussianNoiseWrapper(
             self.actor, cfg.explore_noise,
             noise_clip=cfg.noise_clip
         )
-        self.smooth_policy = GaussianNoiseWrapper(
-            self.actor_target, cfg.smooth_noise,
+        self.smoothing_policy = GaussianNoiseWrapper(
+            self.target_actor, cfg.smooth_noise,
             noise_clip=cfg.noise_clip
         )
 
-    def act(self, obs, eval):
-        return self.explore_policy.act(obs, eval)
+    def act(self, obs, mode: PolicyMode):
+        return self.acting_policy.act(obs, mode)
 
-    def compute_value(self, obs, use_target_network):
-        critic = self.critic_target if use_target_network else self.critic
-        noisy_actions = self.smooth_policy.act(obs, eval=False)
-        return critic([obs, noisy_actions], which='min')
+    def compute_target_value(self, obs):
+        noisy_actions = self.smoothing_policy.act(obs, mode=PolicyMode.EXPLORE)
+        return self.target_critic([obs, noisy_actions], which='min')
 
     def update_with_minibatch(self, batch: dict, counters: dict):
         self.update_critic(batch)

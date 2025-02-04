@@ -1,3 +1,2 @@
-from .episodic import sample_episode, sample_episodes_batched, evaluate_policy
-from .minibatcher import Minibatcher
+from .rollout import rollout, ez_rollout
 from .runner import Runner

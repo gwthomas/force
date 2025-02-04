@@ -68,6 +68,11 @@ class CircularData(AbstractData):
 
 class CircularDataset(Dataset):
     def __init__(self, components: dict, capacity: int, device=None):
+        for k, v in components.items():
+            assert isinstance(v, tuple)
+            assert len(v) == 2
+            assert isinstance(v[0], torch.dtype)
+            assert isinstance(v[1], torch.Size)
         super().__init__({
             k: CircularData(dtype, shape, capacity, device)
             for k, (dtype, shape) in components.items()

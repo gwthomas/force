@@ -16,7 +16,7 @@ def _get_input_shape(obs_shape, action_shape, goal_shape):
     if len(input_shape) == 1:
         return input_shape[0]
     else:
-        return tuple(input_shape)
+        return input_shape
 
 
 class GeneralValueFunction(ConfigurableModule):
@@ -57,8 +57,6 @@ class GeneralValueFunctionEnsemble(ConfigurableModule):
     """Base class for value/Q function ensembles.
     Maps an observation, and optionally an action and/or goal, to a value.
     """
-
-    shape_relevant_kwarg_keys = {'which'}
 
     class Config(ConfigurableModule.Config):
         net = MLP.Config

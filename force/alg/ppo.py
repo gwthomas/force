@@ -3,10 +3,9 @@ from typing import List
 import torch
 import torch.nn.functional as F
 
-from force.alg.agent import Agent
+from force.alg.agent import BaseAgent
 from force.data import TensorDataset, TransitionBuffer
 from force.defaults import NUMERICAL_EPSILON
-from force.env.util import space_shape
 from force.nn.models.value_functions import ValueFunction
 from force.nn.normalization import Normalizer, InputNormalizerWrapper, InputNormalizedPolicy
 from force.nn.optim import Optimizer
@@ -26,8 +25,8 @@ def gae(rewards, values, terminals, gamma, lam):
     return advs
 
 
-class PPO(Agent):
-    class Config(Agent.Config):
+class PPO(BaseAgent):
+    class Config(BaseAgent.Config):
         policy = GaussianPolicy.Config
         value_function = ValueFunction.Config
         optimizer = Optimizer.Config
@@ -39,17 +38,15 @@ class PPO(Agent):
         max_grad_norm = 0.5
         entropy_bonus = 0.0
 
-    def __init__(self, cfg, obs_space, act_space, device=None):
-        super().__init__(cfg, obs_space, act_space, device=device)
+    def __init__(self, cfg, env_info, device=None):
+        super().__init__(cfg, env_info, device=device)
 
-        obs_shape = space_shape(obs_space)
-        act_shape = space_shape(act_space)
         self.normalizer = Normalizer(obs_shape)
         self.policy = InputNormalizedPolicy(
-            GaussianPolicy(cfg.policy, obs_shape, act_shape), self.normalizer
+            GaussianPolicy(cfg.policy, env_info), self.normalizer
         )
         self.value_function = InputNormalizerWrapper(
-            ValueFunction(cfg.value_function, obs_shape), self.normalizer
+            ValueFunction(cfg.value_function, env_info.observation_shape), self.normalizer
         )
         self.ac_params = [*self.policy.parameters(), *self.value_function.parameters()]
         self.optimizer = Optimizer(cfg.optimizer, self.ac_params)

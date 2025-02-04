@@ -1,7 +1,7 @@
-frozendict
-gymnasium
+gymnasium[mujoco]
 h5py
 matplotlib
+pyyaml
 tensorboard
 torch
 tqdm

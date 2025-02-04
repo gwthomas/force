@@ -1,18 +1,15 @@
-from frozendict import frozendict
+from typing import Callable
+
 import torch
+import torch.export
 import torch.nn as nn
 
 from force.defaults import DEVICE
 from force.config import Configurable
-from force.nn.shape import is_valid_shape, get_nonbatch_shape, matches_shape, shape2str
-from force.nn.util import torchify
+from force.nn.shape import Shape, shape2str
 
 
 class Module(nn.Module):
-    # If the output shape of the module depends on any optional arguments,
-    # which are passed as kwargs, list the keys here
-    shape_relevant_kwarg_keys = set()
-
     def __init__(self, device=None, super_init=True):
         if super_init:
             super().__init__()
@@ -23,9 +20,6 @@ class Module(nn.Module):
         # and optionally set self._output_shape instead of get_output_shape
         self._input_shape = None
         self._output_shape = None
-
-        # Maps (input shape, shape-relevant kwargs) -> output shape
-        self._shape_cache = {}
 
     @property
     def device(self):
@@ -56,41 +50,6 @@ class Module(nn.Module):
         else:
             # Override this method to implement custom logic
             raise NotImplementedError(f'{self} does not implement get_output_shape')
-
-    def __call__(self, input, **kwargs):
-        batch_dims = kwargs.get('batch_dims', 1)
-        input_shape = get_nonbatch_shape(input, batch_dims)
-
-        if self._input_shape is not None:
-            self.verify_input_shape(input_shape)
-
-        if self._output_shape is not None:
-            expected_output_shape = self._output_shape
-        else:
-            shape_relevant_kwargs = frozendict({
-                k: v for k, v in kwargs.items() if k in self.shape_relevant_kwarg_keys
-            })
-
-            # Check shape compatibility
-            cache_key = (input_shape, shape_relevant_kwargs)
-            if cache_key in self._shape_cache:
-                expected_output_shape = self._shape_cache[cache_key]
-            else:
-                expected_output_shape = self.get_output_shape(input_shape, **kwargs)
-                assert is_valid_shape(expected_output_shape)
-                self._shape_cache[cache_key] = expected_output_shape
-
-        input = torchify(input, device=self.device)
-        output = self.forward(input, **kwargs)
-
-        # Check output shape
-        assert matches_shape(output, expected_output_shape), \
-               f'{self.__class__.__name__}: ' + \
-               f'Expected output shape {shape2str(expected_output_shape)}, ' + \
-               f'but got {shape2str(get_nonbatch_shape(output, batch_dims))}. ' + \
-               f'(Did you specify shape_relevant_kwarg_keys?)'
-
-        return output
 
     def to(self, device):
         super().to(device)
@@ -125,6 +84,26 @@ class Module(nn.Module):
                 continue
             total += p.numel()
         return total
+    
+    def export(self, path: str | None = None) -> torch.export.ExportedProgram:
+        input_shape = self.input_shape
+        assert input_shape is not None, \
+            "Cannot export Module without input_shape"
+        
+        assert isinstance(input_shape, torch.Size), \
+            "Currently only tensor inputs are supported"
+        example_input = torch.zeros(2, *input_shape, device=self.device)
+        example_args = (example_input,)
+        
+        # Dynamic batch size
+        dynamic_shapes = ({0: torch.export.Dim("batch")},)
+
+        program = torch.export.export(
+            self, args=example_args, dynamic_shapes=dynamic_shapes
+        )
+        if path is not None:
+            torch.export.save(program, path)
+        return program
 
 
 class Sequential(Module, nn.Sequential):
@@ -150,3 +129,24 @@ class ConfigurableModule(Configurable, Module):
     def __init__(self, cfg, device=None):
         Module.__init__(self, device=device)
         Configurable.__init__(self, cfg)
+
+
+class LambdaModule(Module):
+    def __init__(self, fn: Callable,
+                 named_parameters: dict | None = None,
+                 input_shape: Shape | None = None):
+        super().__init__()
+        self.fn = fn
+
+        if named_parameters is not None:
+            for name, param in named_parameters.items():
+                # PyTorch won't allow registration of a name containing dots,
+                # but Module.named_parameters() returns names containing dots.
+                name = name.replace('.', '_')
+                self.register_parameter(name, param)
+        
+        if input_shape is not None:
+            self._input_shape = input_shape
+
+    def forward(self, input):
+        return self.fn(input)

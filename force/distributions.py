@@ -18,3 +18,17 @@ def diagonal_gaussian(loc, scale, reinterpreted_batch_ndims=1, squash=False):
     if reinterpreted_batch_ndims > 0:
         distr = D.Independent(distr, reinterpreted_batch_ndims)
     return distr
+
+
+def unwrapped_entropy(distr):
+    # Unwrap until finding a distribution with a working entropy() method
+    while True:
+        try:
+            return distr.entropy()
+        except:
+            pass
+
+        try:
+            distr = distr.base_dist
+        except:
+            raise ValueError('Unwrapped as much as possible without finding an entropy-compatible distribution')

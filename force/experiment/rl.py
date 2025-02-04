@@ -1,46 +1,45 @@
 from abc import abstractmethod
 import time
 
-import h5py
 import torch
 from tqdm import trange
 
-from force.alg.agent import Agent
-from force.config import Field
-from force.data import TransitionBuffer
-from force.env import EnvConfig, VectorEnvConfig, get_env
+from force.alg.agent import BaseAgent
+from force.env import GymEnv
 from force.experiment.epochal import EpochalExperiment
-from force.policies import UniformPolicy
-from force.sampling import Runner, sample_episode
-from force.util import prefix_dict_keys, pymean
+from force.policies import PolicyMode, UniformPolicy
+from force.sampling import Runner, rollout
+from force.scripts.rollout import rollout_cmd
+from force.util import prefix_dict_keys, stats_dict, pymean
 
 
 class RLExperiment(EpochalExperiment):
     class Config(EpochalExperiment.Config):
-        env = EnvConfig
-        eval_env = Field(EnvConfig, required=False)
-        updates_per_epoch = int
+        env_name = str
+        trains_per_epoch = int
         initial_steps = 0
-        steps_per_update = 1
+        steps_per_train = 1
         num_eval_episodes = 10
-        save_eval_episodes = False
+        use_async_eval = False
 
     def __init__(self, cfg):
         super().__init__(cfg)
 
-        self.env = get_env(cfg.env)
+        self.env = GymEnv(cfg.env_name, device=self.device)
         self.log(f'Env: {repr(self.env)}')
-        self.observation_space = self.env.observation_space
-        self.action_space = self.env.action_space
 
-        self.eval_env = get_env(cfg.eval_env if cfg.eval_env is not None else cfg.env)
-        if cfg.save_eval_episodes:
-            self.eval_path = self.log_dir/'evals.hdf5'
+        if not self.cfg.use_async_eval:
+            # Create envs once ahead of time
+            self.eval_envs = [
+                GymEnv(cfg.env_name, device=self.device)
+                for _ in range(cfg.num_eval_episodes)
+            ]
 
-        self.runner = Runner(self.env, log=self.log)
+        self.runner = Runner(self.env, log=self._log)
 
         self.agent = self.create_agent()
         self.log(f'Agent: {self.agent}')
+        self.register_checkpointables(agent=self.agent)
 
         # Set this to a callable to additionally report normalized returns
         self.return_normalizer = None
@@ -63,24 +62,24 @@ class RLExperiment(EpochalExperiment):
         }
 
     @abstractmethod
-    def create_agent(self) -> Agent:
+    def create_agent(self) -> BaseAgent:
         raise NotImplementedError
 
     def get_initial_data(self):
         steps = self.cfg.initial_steps
         if steps > 0:
-            policy = UniformPolicy(self.action_space)
-            return self.runner.run(policy, steps, eval=False)
+            policy = UniformPolicy(self.env.action_space)
+            return self.runner.run(policy.functional(PolicyMode.EXPLORE), steps)
         else:
             return None
 
     def epoch(self) -> dict:
         self.log('Training...')
-        for _ in trange(self.cfg.updates_per_epoch):
+        for _ in trange(self.cfg.trains_per_epoch):
             batch = self.runner.run(
-                self.agent, self.cfg.steps_per_update, eval=False
+                self.agent.functional(PolicyMode.EXPLORE), self.cfg.steps_per_train,
             )
-            self.agent.update(batch, self.get_counters())
+            self.agent.train(batch, self.get_counters())
             self.updates_done += 1
 
         info = {
@@ -97,40 +96,40 @@ class RLExperiment(EpochalExperiment):
         return prefix_dict_keys('eval', self.evaluate())
 
     def evaluate(self) -> dict:
-        self.log('Evaluating...')
-        t_start = time.time()
-        eval_episodes = [
-            sample_episode(self.eval_env, self.agent, eval=True)
-            for _ in range(self.cfg.num_eval_episodes)
-        ]
-        t_end = time.time()
+        eval_rollout_dir = self._log_dir/'eval_rollouts'
+        eval_rollout_dir.mkdir(exist_ok=True)
+        eval_rollout_path = eval_rollout_dir/f'epoch_{self._epochs_done}.hdf5'
 
-        # Optionally save episodes
-        if self.cfg.save_eval_episodes:
-            with h5py.File(self.eval_path, 'a') as f:
-                for i, ep in enumerate(eval_episodes):
-                    ep.save_to_file(f, prefix=f'iteration_{self.iterations_done}/episode_{i}')
+        if self.cfg.use_async_eval:
+            policy_path = self._log_dir/f'policy_{self._epochs_done}.pt2'
+            self.log(f'Exporting policy to {policy_path} for async eval')
+            self.agent.export_policy(PolicyMode.EVAL, path=policy_path)
+            self.job_manager.enqueue(
+                name=f'eval_{self._epochs_done}',
+                cmd=rollout_cmd(
+                    self.cfg.env_name, policy_path, self.cfg.num_eval_episodes,
+                    out_path=eval_rollout_path,
+                    verbose=True
+                )
+            )
+            return {}
+        else:
+            self.log(f'Evaluating policy.')
+            t_start = time.time()
+            eval_policy = self.agent.functional(PolicyMode.EVAL)
+            eval_trajs = rollout(self.eval_envs, eval_policy,
+                                 out_path=eval_rollout_path)
+            t_end = time.time()
 
-        # Collect statistics
-        returns = torch.tensor([ep.get('rewards').sum() for ep in eval_episodes])
-        lengths = torch.tensor([len(ep) for ep in eval_episodes])
-        eval_stats = {
-            'return_mean': returns.mean().item(),
-            'return_std': returns.std().item(),
-            'return_min': returns.min().item(),
-            'return_max': returns.max().item(),
-            'length_mean': lengths.float().mean().item(),
-            'length_std': lengths.float().std().item(),
-            'length_min': lengths.min().item(),
-            'length_max': lengths.max().item(),
-            'time': t_end - t_start
-        }
-        if self.return_normalizer is not None:
-            normalized_returns = torch.tensor([self.return_normalizer(r) for r in returns])
-            eval_stats.update({
-                'normalized_return_mean': normalized_returns.mean().item(),
-                'normalized_return_std': normalized_returns.std().item(),
-                'normalized_return_min': normalized_returns.min().item(),
-                'normalized_return_max': normalized_returns.max().item()
-            })
-        return eval_stats
+            # Collect statistics
+            returns = torch.tensor([ep.get('rewards').sum() for ep in eval_trajs])
+            lengths = torch.tensor([len(ep) for ep in eval_trajs])
+            eval_stats = {
+                **prefix_dict_keys('return', stats_dict(returns)),
+                **prefix_dict_keys('length', stats_dict(lengths)),
+                'time': t_end - t_start
+            }
+            if self.return_normalizer is not None:
+                normalized_return_stats = stats_dict([self.return_normalizer(r) for r in returns])
+                eval_stats.update(prefix_dict_keys('normalized_return', normalized_return_stats))
+            return eval_stats
